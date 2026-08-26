@@ -256,7 +256,7 @@ function BoardThumbnail({ board }: { board: BoardRecord }) {
   useEffect(() => {
     if (board.thumb) {
       setThumbSrc(board.thumb);
-      return;
+      return undefined;
     }
     if (elements.length > 0) {
       let isMounted = true;
@@ -470,8 +470,8 @@ function layoutImageElements(items: { name: string; src: string; w: number; h: n
   for (let i = 0; i < N; i++) {
     const c = i % cols;
     const r = Math.floor(i / cols);
-    colWidths[c] = Math.max(colWidths[c], items[i].w);
-    rowHeights[r] = Math.max(rowHeights[r], items[i].h);
+    colWidths[c] = Math.max(colWidths[c] ?? 0, items[i]?.w ?? 0);
+    rowHeights[r] = Math.max(rowHeights[r] ?? 0, items[i]?.h ?? 0);
   }
 
   const totalWidth = colWidths.reduce((a, b) => a + b, 0) + (cols - 1) * gap;
@@ -479,11 +479,11 @@ function layoutImageElements(items: { name: string; src: string; w: number; h: n
 
   const colXOffsets: number[] = [0];
   for (let c = 1; c < cols; c++) {
-    colXOffsets[c] = colXOffsets[c - 1] + colWidths[c - 1] + gap;
+    colXOffsets[c] = (colXOffsets[c - 1] ?? 0) + (colWidths[c - 1] ?? 0) + gap;
   }
   const rowYOffsets: number[] = [0];
   for (let r = 1; r < rowsCount; r++) {
-    rowYOffsets[r] = rowYOffsets[r - 1] + rowHeights[r - 1] + gap;
+    rowYOffsets[r] = (rowYOffsets[r - 1] ?? 0) + (rowHeights[r - 1] ?? 0) + gap;
   }
 
   const startX = -Math.round(totalWidth / 2);
@@ -492,10 +492,10 @@ function layoutImageElements(items: { name: string; src: string; w: number; h: n
   return items.map((item, idx) => {
     const c = idx % cols;
     const r = Math.floor(idx / cols);
-    const cellX = startX + colXOffsets[c];
-    const cellY = startY + rowYOffsets[r];
-    const cellW = colWidths[c];
-    const cellH = rowHeights[r];
+    const cellX = startX + (colXOffsets[c] ?? 0);
+    const cellY = startY + (rowYOffsets[r] ?? 0);
+    const cellW = colWidths[c] ?? 0;
+    const cellH = rowHeights[r] ?? 0;
     const posX = Math.round(cellX + (cellW - item.w) / 2);
     const posY = Math.round(cellY + (cellH - item.h) / 2);
 
@@ -944,7 +944,7 @@ function HomePage() {
         combinedElements = fileEntries.flatMap((e) => (e.jsonBoard?.elements as any[]) || []);
       }
 
-      const firstTitle = fileEntries[0].boardTitle;
+      const firstTitle = fileEntries[0]?.boardTitle;
       const combinedTitle = fileEntries.length === 1
         ? firstTitle
         : fileEntries.length <= 3
@@ -1200,7 +1200,7 @@ function HomePage() {
     try {
       for (let i = 0; i < selectedList.length; i++) {
         const b = selectedList[i];
-        await handleDownload(b);
+        if (b) await handleDownload(b);
         if (i < selectedList.length - 1) {
           await new Promise((r) => setTimeout(r, 220));
         }
