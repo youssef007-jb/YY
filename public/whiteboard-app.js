@@ -4267,7 +4267,17 @@ document.querySelectorAll(".hstyle-btn").forEach(b=>{b.onclick=()=>{document.que
 
 addEventListener("keydown",e=>{
   const isTyping = e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA"||e.target.isContentEditable;
-  if(!isTyping && !e.ctrlKey && !e.metaKey && !e.altKey){
+  // Shift + V : paste at the current cursor position (alternative to Ctrl/Cmd + V)
+  if(e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && e.code==="KeyV"){
+    const typingNow = isTyping || (document.activeElement && (document.activeElement.tagName==="INPUT" || document.activeElement.tagName==="TEXTAREA" || document.activeElement.isContentEditable)) || !!inlineBox;
+    if(!typingNow){
+      e.preventDefault();
+      handleClipboardPaste(getMouseOrViewportWorld());
+      return;
+    }
+  }
+  if(!isTyping && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey){
+
     if(e.code==="Space"){e.preventDefault(); if(!state.spacePan){state.spacePan=true; state.isPanning=true; state.tempPan=false; state.prevTool=state.tool; highlightTool("hand"); state.panStart={x:state.lastMouse.x-state.camera.x,y:state.lastMouse.y-state.camera.y}; container.style.cursor="grabbing";} return;}
     if(e.key.toLowerCase()==="v"){setActiveTool("select")}
     else if(e.key.toLowerCase()==="p"){setActiveTool("pen")}
