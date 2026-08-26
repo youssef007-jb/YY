@@ -24,13 +24,13 @@ export type BoardRecord = {
   toolbarPos: string;
   stickyAutoEdit: boolean;
   thumb: string | null;
-  phase?: string;
-  week?: string;
-  phase_category?: number | null;
-  week_category?: number | null;
-  docId?: string;
-  layers?: unknown[];
-  activeLayerId?: string;
+  phase?: string | undefined;
+  week?: string | undefined;
+  phase_category?: number | null | undefined;
+  week_category?: number | null | undefined;
+  docId?: string | undefined;
+  layers?: unknown[] | undefined;
+  activeLayerId?: string | undefined;
 };
 
 const DB_NAME = "hbibo-whiteboards";
@@ -110,8 +110,8 @@ export function normalizePhaseString(phase?: string | null): string | undefined 
 export function extractPhaseAndWeekCategories(filename: string): {
   phase_category: number | null;
   week_category: number | null;
-  phase?: string;
-  week?: string;
+  phase?: string | undefined;
+  week?: string | undefined;
 } {
   if (!filename || typeof filename !== "string") {
     return { phase_category: null, week_category: null };
@@ -119,8 +119,8 @@ export function extractPhaseAndWeekCategories(filename: string): {
   const phaseMatch = filename.match(/phase[:\s_\-\/]*(\d+)/i);
   const weekMatch = filename.match(/week[:\s_\-\/]*(\d+)/i);
 
-  const phaseNum = phaseMatch ? parseInt(phaseMatch[1], 10) : null;
-  const weekNum = weekMatch ? parseInt(weekMatch[1], 10) : null;
+  const phaseNum = phaseMatch ? parseInt(phaseMatch[1] ?? "", 10) : null;
+  const weekNum = weekMatch ? parseInt(weekMatch[1] ?? "", 10) : null;
 
   const validPhase = phaseNum !== null && !Number.isNaN(phaseNum) ? phaseNum : null;
   const validWeek = weekNum !== null && !Number.isNaN(weekNum) ? weekNum : null;
@@ -134,8 +134,8 @@ export function extractPhaseAndWeekCategories(filename: string): {
 }
 
 export function autoExtractPhaseAndWeek(name: string): {
-  phase?: string;
-  week?: string;
+  phase?: string | undefined;
+  week?: string | undefined;
   phase_category: number | null;
   week_category: number | null;
 } {
@@ -158,7 +158,7 @@ export function normalizeBoard(b: BoardRecord): BoardRecord {
   b.elements = rawElements;
   b.bgColor = b.bgColor || "#ffffff";
   if (b.phase) {
-    b.phase = normalizePhaseString(b.phase);
+    b.phase = normalizePhaseString(b.phase) ?? b.phase;
   }
   b.gridStyle = b.gridStyle || "none";
   b.toolbarPos = b.toolbarPos || "bottom";

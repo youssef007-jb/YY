@@ -1,7 +1,7 @@
 import "./lib/error-capture";
 
 // Polyfill DOMMatrix for Node SSR environments in case any graphics or bundle module references it
-if (typeof (globalThis as unknown as { DOMMatrix?: unknown }).DOMMatrix === "undefined") {
+if (typeof (globalThis as unknown as { DOMMatrix?: unknown })["DOMMatrix"] === "undefined") {
   class DOMMatrixMock {
     a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
     m11 = 1; m12 = 0; m13 = 0; m14 = 0;
@@ -21,8 +21,8 @@ if (typeof (globalThis as unknown as { DOMMatrix?: unknown }).DOMMatrix === "und
     inverse() { return this; }
     setMatrixValue() { return this; }
   }
-  (globalThis as unknown as Record<string, unknown>).DOMMatrix = DOMMatrixMock;
-  (globalThis as unknown as Record<string, unknown>).DOMMatrixReadOnly = DOMMatrixMock;
+  (globalThis as unknown as Record<string, unknown>)["DOMMatrix"] = DOMMatrixMock;
+  (globalThis as unknown as Record<string, unknown>)["DOMMatrixReadOnly"] = DOMMatrixMock;
 }
 
 import { consumeLastCapturedError } from "./lib/error-capture";

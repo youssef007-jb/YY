@@ -27,7 +27,6 @@ export async function renderPdfToImages(file: File | Blob): Promise<RenderedPage
     const loadingTask = pdfjsLib.getDocument({
       data: new Uint8Array(arrayBuffer),
       useWorkerFetch: false,
-      isEvalSupported: false,
       useSystemFonts: true,
     });
     const pdf = await loadingTask.promise;
