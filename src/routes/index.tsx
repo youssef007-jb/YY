@@ -271,6 +271,7 @@ function BoardThumbnail({ board }: { board: BoardRecord }) {
         isMounted = false;
       };
     }
+    return undefined;
   }, [board.id, board.thumb, board.updatedAt, elements.length]);
 
   if (thumbSrc) {
@@ -944,7 +945,7 @@ function HomePage() {
         combinedElements = fileEntries.flatMap((e) => (e.jsonBoard?.elements as any[]) || []);
       }
 
-      const firstTitle = fileEntries[0]?.boardTitle;
+      const firstTitle = fileEntries[0]?.boardTitle ?? "Untitled";
       const combinedTitle = fileEntries.length === 1
         ? firstTitle
         : fileEntries.length <= 3
