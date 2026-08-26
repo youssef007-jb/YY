@@ -1,0 +1,336 @@
+<div id="canvas-container" class="absolute inset-0 dot-grid" style="cursor:default"><canvas id="board"></canvas></div>
+<div id="eraser-cursor" class="eraser-cursor"></div>
+<div id="laser-cursor" class="laser-cursor"></div>
+<div id="draw-cursor" class="draw-cursor"></div>
+<div id="place-cursor" class="place-cursor">📝</div>
+<div id="spotlight-layer" class="spotlight-layer" aria-hidden="true"></div>
+<div id="sticky-color-rail" class="sticky-color-rail hidden" aria-label="Sticky note color"></div>
+<div id="clear-overlay" class="clear-overlay" aria-hidden="true">
+  <div class="clear-fog"></div>
+  <div class="clear-card">
+    <div class="clear-glyph" id="clear-glyph">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+    </div>
+    <div class="clear-title" id="clear-title">Wipe Board</div>
+    <p class="clear-sub" id="clear-sub">Slide to permanently clear this whiteboard</p>
+    <div id="clear-slider" class="wipe-track">
+      <div id="clear-fill" class="wipe-fill"></div>
+      <span class="wipe-label" id="clear-slide-label">slide to wipe</span>
+      <div id="clear-knob" class="wipe-knob">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+      </div>
+    </div>
+    <button type="button" id="clear-cancel" class="clear-cancel">Cancel</button>
+  </div>
+</div>
+
+<div id="selection-toolbar" class="hidden absolute z-[9000] bg-white border border-slate-200 rounded-full px-2 py-1 shadow-[0_8px_24px_rgba(0,0,0,0.12)] flex items-center gap-1">
+<button id="st-edit" title="Edit" class="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center"><i data-lucide="pen-line" class="w-4 h-4"></i></button>
+<div class="relative"><button id="st-color" class="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center"><span id="st-color-dot" class="w-5 h-5 rounded-full border block bg-black"></span></button>
+<div id="st-color-palette" class="hidden absolute bottom-[115%] left-1/2 -translate-x-1/2 bg-white border rounded-xl p-2 shadow-xl grid grid-cols-4 gap-1.5 w-44 z-50"></div></div>
+<div class="relative"><button id="st-bold" class="w-8 h-8 rounded-full hover:bg-slate-100 font-bold">B</button>
+<div id="st-bold-palette" class="hidden absolute bottom-[115%] left-1/2 -translate-x-1/2 bg-white border rounded-xl p-1.5 shadow-xl z-50 min-w-[240px]">
+<div class="flex gap-1 items-center">
+<button data-style="bold" title="Bold" class="w-8 h-8 rounded hover:bg-slate-100 font-bold">B</button>
+<button data-style="italic" title="Italic" class="w-8 h-8 rounded hover:bg-slate-100 italic">I</button>
+<button data-style="underline" title="Underline" class="w-8 h-8 rounded hover:bg-slate-100 underline">U</button>
+<button id="st-font" title="Font" class="w-8 h-8 rounded hover:bg-slate-100 text-[11px] font-semibold tracking-tight">Aa</button>
+<button id="st-size" title="Size" class="w-8 h-8 rounded hover:bg-slate-100 flex items-center justify-center text-[11px] font-semibold"><span class="leading-none">A<span class="text-[9px] align-super">↕</span></span></button>
+</div>
+<div id="st-font-palette" class="hidden mt-1.5 border-t pt-1 max-h-56 overflow-y-auto"></div>
+<div id="st-size-palette" class="hidden mt-1.5 border-t pt-2 px-1.5 pb-1"></div>
+</div></div>
+<div class="w-px h-5 bg-slate-200"></div>
+<button id="st-copy" title="Copy" class="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center"><i data-lucide="copy" class="w-4 h-4"></i></button>
+<button id="st-duplicate" title="Duplicate" class="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center"><i data-lucide="copy-plus" class="w-4 h-4"></i></button>
+<button id="st-lock" class="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center"><i data-lucide="lock-open" class="w-4 h-4"></i></button>
+<button id="st-delete" class="w-8 h-8 rounded-full hover:bg-red-50 text-red-500 flex items-center justify-center"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+<div class="relative"><button id="st-more" class="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
+<div id="st-more-palette" class="hidden absolute bottom-[115%] right-0 bg-white border rounded-xl p-1 shadow-xl flex flex-col w-44 z-50 text-xs">
+<button data-action="front" class="text-left px-3 py-2 hover:bg-slate-100 rounded">Bring to Front</button>
+<button data-action="forward" class="text-left px-3 py-2 hover:bg-slate-100 rounded">Bring Forward</button>
+<button data-action="back" class="text-left px-3 py-2 hover:bg-slate-100 rounded">Send Backward</button>
+<button data-action="backward" class="text-left px-3 py-2 hover:bg-slate-100 rounded">Send to Back</button>
+</div></div>
+</div>
+
+<div id="right-click-menu" class="hidden absolute z-[70] bg-white border rounded-xl shadow-xl py-1 min-w-[180px] text-sm">
+<button id="rc-create-text" class="w-full text-left px-3 py-2 hover:bg-slate-100 flex gap-2 items-center"><i data-lucide="type" class="w-4 h-4"></i> Create text</button>
+<button id="rc-copy" class="w-full text-left px-3 py-2 hover:bg-slate-100 flex gap-2 items-center"><i data-lucide="copy" class="w-4 h-4"></i> Copy</button>
+<button id="rc-paste" class="w-full text-left px-3 py-2 hover:bg-slate-100 flex gap-2 items-center"><i data-lucide="clipboard" class="w-4 h-4"></i> Paste</button>
+<button id="rc-duplicate" class="w-full text-left px-3 py-2 hover:bg-slate-100 flex gap-2 items-center"><i data-lucide="copy-plus" class="w-4 h-4"></i> Duplicate</button>
+<div class="h-px bg-slate-100 my-1"></div>
+<button id="rc-delete" class="w-full text-left px-3 py-2 hover:bg-red-50 text-red-500 flex gap-2 items-center"><i data-lucide="trash-2" class="w-4 h-4"></i> Delete</button>
+</div>
+
+<div class="absolute top-4 left-4 z-10 bg-white/90 border rounded-full px-4 py-2 flex gap-3 shadow-sm items-center title-pill">
+<button id="home-btn" title="Back to homepage" class="w-7 h-7 rounded-full bg-slate-900 text-white font-bold flex items-center justify-center text-xs hover:bg-slate-700"><i data-lucide="home" class="w-3.5 h-3.5"></i></button>
+<input id="board-title" value="" placeholder="Untitled Whiteboard" class="font-semibold text-sm bg-transparent outline-none w-44">
+</div>
+
+<div id="main-toolbar-wrapper" class="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2">
+<div id="main-toolbar" class="bg-white/90 border rounded-full px-3 py-1.5 flex items-center gap-1.5 shadow-md">
+<button data-tool="select" class="tool-btn p-2 rounded-full bg-slate-900 text-white"><i data-lucide="mouse-pointer-2" class="w-4 h-4"></i></button>
+<button data-tool="hand" class="tool-btn p-2 rounded-full hover:bg-slate-100 text-slate-600"><i data-lucide="hand" class="w-4 h-4"></i></button>
+<button data-tool="pen" id="pen-btn" class="tool-btn has-settings-dots relative p-2 rounded-full hover:bg-slate-100 text-slate-600 flex flex-col items-center justify-center"><i data-lucide="pen-tool" class="w-4 h-4"></i><span class="tool-settings-dots flex items-center justify-center gap-0.5 mt-0.5"><span class="w-[2px] h-[2px] rounded-full bg-current opacity-70"></span><span class="w-[2px] h-[2px] rounded-full bg-current opacity-70"></span><span class="w-[2px] h-[2px] rounded-full bg-current opacity-70"></span></span></button>
+<button data-tool="highlighter" id="highlighter-btn" class="tool-btn has-settings-dots relative p-2 rounded-full hover:bg-slate-100 text-slate-600 flex flex-col items-center justify-center"><i data-lucide="highlighter" class="w-4 h-4"></i><span class="tool-settings-dots flex items-center justify-center gap-0.5 mt-0.5"><span class="w-[2px] h-[2px] rounded-full bg-current opacity-70"></span><span class="w-[2px] h-[2px] rounded-full bg-current opacity-70"></span><span class="w-[2px] h-[2px] rounded-full bg-current opacity-70"></span></span></button>
+<button data-tool="eraser" id="eraser-btn" class="tool-btn has-settings-dots relative p-2 rounded-full hover:bg-slate-100 text-slate-600 flex flex-col items-center justify-center"><i data-lucide="eraser" class="w-4 h-4"></i><span class="tool-settings-dots flex items-center justify-center gap-0.5 mt-0.5"><span class="w-[2px] h-[2px] rounded-full bg-current opacity-70"></span><span class="w-[2px] h-[2px] rounded-full bg-current opacity-70"></span><span class="w-[2px] h-[2px] rounded-full bg-current opacity-70"></span></span></button>
+<button data-tool="vanishing" id="vanishing-btn" title="Laser pointer" class="tool-btn has-settings-dots relative p-2 rounded-full hover:bg-slate-100 text-slate-600 flex flex-col items-center justify-center"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="6" cy="18" r="2.2" fill="currentColor" stroke="none"/><path d="M8 16 L20 4"/><path d="M16 4 h4 v4" opacity=".35"/></svg><span class="tool-settings-dots flex items-center justify-center gap-0.5 mt-0.5"><span class="w-[2px] h-[2px] rounded-full bg-current opacity-70"></span><span class="w-[2px] h-[2px] rounded-full bg-current opacity-70"></span><span class="w-[2px] h-[2px] rounded-full bg-current opacity-70"></span></span></button>
+<div class="toolbar-sep h-4 w-px bg-slate-200 mx-1"></div>
+<button data-tool="text" class="tool-btn p-2 rounded-full hover:bg-slate-100 text-slate-600"><i data-lucide="type" class="w-4 h-4"></i></button>
+<button id="add-sticky-btn" class="p-2 rounded-full hover:bg-slate-100 text-slate-600"><i data-lucide="sticky-note" class="w-4 h-4"></i></button>
+<button id="shapes-menu-btn" title="Shapes & Teaching Tools" class="p-2 rounded-full hover:bg-slate-100 text-slate-600">
+<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round">
+  <rect x="2.5" y="12.5" width="8.5" height="8.5" rx="1.2"/>
+  <circle cx="17.2" cy="16.8" r="4.2"/>
+  <path d="M8.2 2.8 L12.6 10.6 H3.8 Z"/>
+</svg>
+</button>
+<button data-tool="arrow" class="tool-btn p-2 rounded-full hover:bg-slate-100 text-slate-600"><i data-lucide="arrow-right" class="w-4 h-4"></i></button>
+<label class="p-2 rounded-full hover:bg-slate-100 text-slate-600 cursor-pointer" title="Upload Image or PDF"><i data-lucide="image" class="w-4 h-4"></i><input type="file" id="image-upload" accept="image/*,.pdf,application/pdf" multiple class="hidden"></label>
+<button id="emoji-menu-btn" class="p-2 rounded-full hover:bg-slate-100 text-slate-600"><i data-lucide="smile" class="w-4 h-4"></i></button>
+<div class="toolbar-sep h-4 w-px bg-slate-200 mx-1"></div>
+<div class="toolbar-extras flex items-center gap-2">
+<input type="color" id="stroke-color" value="#1E1E1E" class="w-5 h-5 rounded bg-transparent border-none">
+<input type="range" id="stroke-width" min="1" max="30" value="7" class="w-16 accent-slate-800">
+<button id="settings-menu-btn" class="p-1.5 rounded-full hover:bg-slate-100 border"><i data-lucide="settings" class="w-3.5 h-3.5"></i></button>
+</div>
+</div>
+
+<!-- Spotlight Floating Control Panel -->
+<div id="spotlight-controls-panel" class="hidden bg-white/95 border border-slate-200/90 rounded-2xl p-2.5 shadow-2xl backdrop-blur-md flex items-center gap-3 text-xs z-30 animate-in fade-in slide-in-from-top-2 duration-150">
+  <div class="flex items-center gap-1.5 font-semibold text-slate-800 pl-1">
+    <div class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></div>
+    <span>Spotlight</span>
+  </div>
+  <div class="h-4 w-px bg-slate-200"></div>
+  <div class="flex items-center gap-1">
+    <button id="spotlight-shape-toggle-circle" class="spot-shape-btn px-2 py-1 rounded-lg text-[11px] font-medium bg-slate-900 text-white flex items-center gap-1" title="Circle spotlight">
+      <i data-lucide="circle" class="w-3 h-3"></i>
+      <span>Circle</span>
+    </button>
+    <button id="spotlight-shape-toggle-rect" class="spot-shape-btn px-2 py-1 rounded-lg text-[11px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center gap-1" title="Rectangle spotlight">
+      <i data-lucide="square" class="w-3 h-3"></i>
+      <span>Rectangle</span>
+    </button>
+  </div>
+  <div class="h-4 w-px bg-slate-200"></div>
+  <div class="flex items-center gap-1" id="spotlight-darkness-options">
+    <span class="text-[10px] uppercase font-bold text-slate-400 mr-0.5">Darkness:</span>
+    <button data-darkness="0.38" class="spot-dark-btn px-2 py-1 rounded-lg text-[11px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-700">Soft</button>
+    <button data-darkness="0.65" class="spot-dark-btn px-2 py-1 rounded-lg text-[11px] font-medium bg-slate-900 text-white shadow-xs">Medium</button>
+    <button data-darkness="0.85" class="spot-dark-btn px-2 py-1 rounded-lg text-[11px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-700">Deep</button>
+  </div>
+  <div class="h-4 w-px bg-slate-200"></div>
+  <div class="flex items-center gap-1.5">
+    <span class="text-[10px] uppercase font-bold text-slate-400">Size:</span>
+    <input type="range" id="spotlight-quick-size" min="60" max="600" value="220" class="w-16 accent-slate-900">
+  </div>
+  <div class="h-4 w-px bg-slate-200"></div>
+  <button id="spotlight-exit-btn" class="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-red-50 text-slate-700 hover:text-red-600 font-semibold text-[11px] flex items-center gap-1 transition">
+    <i data-lucide="mouse-pointer-2" class="w-3.5 h-3.5"></i>
+    <span>Turn Off</span>
+  </button>
+</div>
+</div>
+
+<div id="popover-container">
+<div id="pen-popover" class="popover-menu hidden bg-white border rounded-2xl p-3 shadow-xl tool-settings"><div class="flex justify-between mb-2"><span class="text-xs font-bold uppercase text-slate-500">Pen • Colors • 4 styles</span><button class="close-pop p-1 hover:bg-slate-100 rounded-full"><i data-lucide="x" class="w-4 h-4"></i></button></div><div id="pen-colors" class="flex flex-wrap gap-1.5 mb-3 items-center"></div><div class="text-[10px] uppercase text-slate-400 font-bold mb-1">Style</div><div id="pen-styles" class="grid grid-cols-2 gap-1.5 mb-3"></div><div class="flex gap-2 items-center text-xs"><span>Size</span><input type="range" id="pen-thick" min="1" max="30" value="7" class="flex-1 accent-slate-900 fat-range"><span id="pen-thick-val">7px</span></div></div>
+<div id="highlighter-popover" class="popover-menu hidden bg-white border rounded-2xl p-3 shadow-xl tool-settings"><div class="flex justify-between mb-2"><span class="text-xs font-bold uppercase text-slate-500">Highlighter • Colors</span><button class="close-pop p-1 hover:bg-slate-100 rounded-full"><i data-lucide="x" class="w-4 h-4"></i></button></div><div id="highlighter-colors" class="flex flex-wrap gap-1.5 mb-2 items-center"></div><div class="grid grid-cols-3 gap-1 mb-2 text-[10px]"><button data-hstyle="0" class="hstyle-btn px-2 py-1 rounded bg-slate-900 text-white">Standard</button><button data-hstyle="1" class="hstyle-btn px-2 py-1 rounded bg-slate-100">Marker</button><button data-hstyle="2" class="hstyle-btn px-2 py-1 rounded bg-slate-100">Soft</button></div><div class="flex gap-2 items-center text-xs"><span>Size</span><input type="range" id="highlighter-thick" min="5" max="40" value="15" class="flex-1 accent-slate-900 fat-range"><span id="highlighter-thick-val">15px</span></div></div>
+<div id="eraser-popover" class="popover-menu hidden bg-white border rounded-2xl p-3 shadow-xl tool-settings"><div class="flex justify-between mb-2"><span class="text-xs font-bold uppercase text-slate-500">Eraser • Default 5px</span><button class="close-pop p-1 hover:bg-slate-100 rounded-full"><i data-lucide="x" class="w-4 h-4"></i></button></div><div class="flex gap-1 mb-2"><button id="eraser-mode-whole" class="flex-1 px-2 py-1.5 rounded-full bg-slate-900 text-white text-xs">Whole Object</button><button id="eraser-mode-partial" class="flex-1 px-2 py-1.5 rounded-full bg-slate-100 text-xs">Touch Split</button></div><div class="flex gap-2 items-center text-xs"><span>Size</span><input type="range" id="eraser-thick" min="2" max="60" value="5" class="flex-1 accent-slate-900 fat-range"><span id="eraser-thick-val">5px</span></div></div>
+<div id="vanishing-popover" class="popover-menu hidden bg-white border rounded-2xl p-3 shadow-xl tool-settings"><div class="flex justify-between mb-2"><span class="text-xs font-bold uppercase text-slate-500">Laser Pointer</span><button class="close-pop p-1 hover:bg-slate-100 rounded-full"><i data-lucide="x" class="w-4 h-4"></i></button></div><div id="vanishing-colors" class="flex flex-wrap gap-1.5 mb-2 items-center"></div><div class="text-[10px] uppercase text-slate-400 font-bold mb-1">Animation</div><div id="vanish-anims" class="grid grid-cols-1 gap-1 mb-2"></div><div class="flex gap-2 items-center text-xs"><span>Size</span><input type="range" id="vanishing-thick" min="1" max="25" value="4" class="flex-1 accent-slate-900 fat-range"><span id="vanishing-thick-val">4px</span></div></div>
+<div id="shapes-popover" class="popover-menu hidden shapes-stealth-panel rounded-2xl p-3.5 shadow-2xl w-[320px]">
+  <div class="flex justify-between items-center mb-2.5">
+    <span class="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Geometric Shapes</span>
+    <button class="close-pop p-1 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-zinc-200"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+  </div>
+  <div class="grid grid-cols-6 gap-1.5" id="shapes-grid">
+    <button data-tool="line" class="tool-btn stealth-shape-btn" title="Line">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="4" y1="20" x2="20" y2="4"/></svg>
+    </button>
+    <button data-tool="arrow" class="tool-btn stealth-shape-btn" title="Arrow">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+    </button>
+    <button data-tool="doubleArrow" class="tool-btn stealth-shape-btn" title="Double Arrow">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 7 2 12 7 17"/><polyline points="17 7 22 12 17 17"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+    </button>
+    <button data-tool="dashed" class="tool-btn stealth-shape-btn" title="Dashed Line">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3"><line x1="4" y1="20" x2="20" y2="4"/></svg>
+    </button>
+    <button data-tool="rect" class="tool-btn stealth-shape-btn" title="Rectangle">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16"/></svg>
+    </button>
+    <button data-tool="roundRect" class="tool-btn stealth-shape-btn" title="Rounded Rectangle">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="4"/></svg>
+    </button>
+    <button data-tool="circle" class="tool-btn stealth-shape-btn" title="Circle">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/></svg>
+    </button>
+    <button data-tool="ellipse" class="tool-btn stealth-shape-btn" title="Ellipse">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="12" cy="12" rx="10" ry="6"/></svg>
+    </button>
+    <button data-tool="triangle" class="tool-btn stealth-shape-btn" title="Triangle">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 3 21 21 3 21"/></svg>
+    </button>
+    <button data-tool="diamond" class="tool-btn stealth-shape-btn" title="Diamond">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 22 12 12 22 2 12"/></svg>
+    </button>
+    <button data-tool="star" class="tool-btn stealth-shape-btn" title="Star">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+    </button>
+    <button data-tool="hexagon" class="tool-btn stealth-shape-btn" title="Hexagon">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 21 7 21 17 12 22 3 17 3 7"/></svg>
+    </button>
+  </div>
+
+  <div class="text-[10px] font-bold uppercase tracking-wider text-zinc-400 mt-2.5 mb-1.5">Teaching Instruments</div>
+  <div class="grid grid-cols-6 gap-1.5" id="teaching-tools">
+    <button type="button" data-teach="ruler" class="teach-btn stealth-shape-btn" title="Ruler">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="8" width="18" height="8" rx="1"/><path d="M7 8v3M11 8v4M15 8v3M19 8v4"/></svg>
+    </button>
+    <button type="button" data-teach="protractor" class="teach-btn stealth-shape-btn" title="Protractor">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 18a8 8 0 0 1 16 0"/><path d="M4 18h16"/><path d="M12 10v8"/></svg>
+    </button>
+    <button type="button" data-teach="compass" class="teach-btn stealth-shape-btn" title="Compass">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="5" r="2"/><path d="m12 7 4 14M12 7 8 21M8 14h8"/></svg>
+    </button>
+    <button type="button" data-teach="axes" class="teach-btn stealth-shape-btn" title="Coordinate axes">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 20V6M4 20h14"/><path d="m4 6-2 2M4 6l2 2M18 20l-2-2M18 20l-2 2"/></svg>
+    </button>
+    <button type="button" data-teach="spotlight" class="teach-btn stealth-shape-btn" title="Spotlight">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>
+    </button>
+    <button type="button" data-teach="timer" class="teach-btn stealth-shape-btn" title="Class timer">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 1.5M9 3h6"/></svg>
+    </button>
+  </div>
+  <div class="text-[10px] text-zinc-500 mt-2">Hold Shift for 1:1 ratio. Lines stay active until another tool is selected.</div>
+</div>
+<div id="sticky-popover" class="popover-menu hidden bg-white border rounded-2xl p-3 shadow-xl w-[260px]"><div class="text-xs uppercase text-slate-500 mb-2">Yellow ready • Click board to place</div><div class="grid grid-cols-6 gap-1.5"><button data-sticky="#fef08a" class="sticky-color w-8 h-8 rounded-lg bg-[#fef08a] border-2 border-slate-900 shadow-sm" title="Yellow"></button><button data-sticky="#fed7aa" class="sticky-color w-8 h-8 rounded-lg bg-[#fed7aa] shadow-sm" title="Orange"></button><button data-sticky="#fecaca" class="sticky-color w-8 h-8 rounded-lg bg-[#fecaca] shadow-sm" title="Coral"></button><button data-sticky="#bbf7d0" class="sticky-color w-8 h-8 rounded-lg bg-[#bbf7d0] shadow-sm" title="Mint"></button><button data-sticky="#bfdbfe" class="sticky-color w-8 h-8 rounded-lg bg-[#bfdbfe] shadow-sm" title="Sky Blue"></button><button data-sticky="#e9d5ff" class="sticky-color w-8 h-8 rounded-lg bg-[#e9d5ff] shadow-sm" title="Lavender"></button><button data-sticky="#fbcfe8" class="sticky-color w-8 h-8 rounded-lg bg-[#fbcfe8] shadow-sm" title="Rose Pink"></button><button data-sticky="#99f6e4" class="sticky-color w-8 h-8 rounded-lg bg-[#99f6e4] shadow-sm" title="Aqua Teal"></button><button data-sticky="#fde68a" class="sticky-color w-8 h-8 rounded-lg bg-[#fde68a] shadow-sm" title="Warm Gold"></button><button data-sticky="#cbd5e1" class="sticky-color w-8 h-8 rounded-lg bg-[#cbd5e1] shadow-sm" title="Cool Grey"></button><button data-sticky="#fed7e2" class="sticky-color w-8 h-8 rounded-lg bg-[#fed7e2] shadow-sm" title="Peach Blush"></button><button data-sticky="#ffffff" class="sticky-color w-8 h-8 rounded-lg bg-white border border-slate-200 shadow-sm" title="White"></button></div><label class="flex items-center gap-2 mt-3 text-xs"><input type="checkbox" id="sticky-auto-edit" class="rounded"> Start writing immediately</label></div>
+<div id="emoji-popover" class="popover-menu hidden bg-white border rounded-2xl p-3 shadow-xl w-[300px]"><div class="text-[10px] font-bold uppercase text-slate-400 mb-2">Teaching Pack • 48 emojis • Stays selected</div><div class="grid grid-cols-8 gap-1 max-h-[160px] overflow-y-auto">
+<button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">❤️</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">⭐</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">✅</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">❌</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">🔥</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">👍</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">👏</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">💯</button>
+<button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">💡</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">❓</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">❗</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">⚠️</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">📌</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">🎯</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">📚</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">✏️</button>
+<button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">📝</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">🏆</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">🥇</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">👉</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">👈</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">⬆️</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">⬇️</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">➡️</button>
+<button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">🔴</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">🟢</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">🔵</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">🟡</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">😊</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">🤔</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">👀</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">✨</button>
+<button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">🎉</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">💭</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">🧠</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">😕</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">🤩</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">🙌</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">👩‍🏫</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">👨‍🎓</button>
+<button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">📊</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">📈</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">🔍</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">⏰</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">💬</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">⚡</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">🌟</button><button class="emoji-option text-xl hover:bg-slate-100 rounded p-1">🎯</button>
+</div></div>
+<div id="settings-popover" class="popover-menu hidden bg-white border rounded-2xl p-3 shadow-lg text-xs tool-settings">
+<div class="font-bold border-b pb-1">Grid</div>
+<div class="flex gap-1 mt-1">
+  <button id="grid-none" class="px-2 py-1 bg-slate-900 text-white rounded w-full">Blank</button>
+  <button id="grid-dots" class="px-2 py-1 bg-slate-100 rounded w-full">Dots</button>
+  <button id="grid-lines" class="px-2 py-1 bg-slate-100 rounded w-full">Lines</button>
+</div>
+<div class="flex gap-2 mt-3 items-center">
+  <span class="shrink-0">Spacing</span>
+  <input type="range" id="grid-spacing" min="12" max="48" value="24" step="1" class="flex-1 fat-range">
+  <span id="grid-spacing-val" class="w-10 text-right tabular-nums">24px</span>
+</div>
+<div class="flex gap-2 mt-2 items-center"><span>Background</span></div>
+<div id="bg-swatches" class="grid grid-cols-6 gap-1.5 mt-1"></div>
+<div class="font-bold border-b pb-1 mt-3">Toolbar Theme</div>
+<div class="grid grid-cols-2 gap-1.5 mt-1.5" id="theme-options">
+  <button data-theme="classlight" class="theme-btn px-2 py-1.5 bg-slate-900 text-white rounded text-[11px] font-medium" title="Clean Minimalist Light Canvas">Classic Light</button>
+  <button data-theme="blueprint" class="theme-btn px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded text-[11px] font-medium" title="Blueprint Deep Charcoal & Cobalt">Blueprint</button>
+</div>
+<div class="font-bold border-b pb-1 mt-3">Toolbar Position</div>
+<div class="grid grid-cols-4 gap-1.5 mt-1.5">
+  <button data-pos="top" class="pos-btn py-2 px-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl flex items-center justify-center transition" title="Top"><i data-lucide="arrow-up" class="w-4 h-4"></i></button>
+  <button data-pos="bottom" class="pos-btn py-2 px-1 bg-slate-900 text-white rounded-xl flex items-center justify-center transition" title="Bottom"><i data-lucide="arrow-down" class="w-4 h-4"></i></button>
+  <button data-pos="left" class="pos-btn py-2 px-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl flex items-center justify-center transition" title="Left"><i data-lucide="arrow-left" class="w-4 h-4"></i></button>
+  <button data-pos="right" class="pos-btn py-2 px-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl flex items-center justify-center transition" title="Right"><i data-lucide="arrow-right" class="w-4 h-4"></i></button>
+</div>
+</div>
+</div>
+
+<!-- Timer Dialog Modal -->
+<div id="timer-config-modal" class="hidden absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-white/95 border border-slate-200/90 rounded-3xl p-5 shadow-2xl backdrop-blur-md w-[320px] animate-in fade-in zoom-in-95 duration-150">
+  <div class="flex items-center justify-between border-b pb-2.5 mb-3.5">
+    <div class="flex items-center gap-2">
+      <div class="flex h-7 w-7 items-center justify-center rounded-xl bg-slate-900 text-white">
+        <i data-lucide="timer" class="w-4 h-4"></i>
+      </div>
+      <span class="font-bold text-sm text-slate-900">Whiteboard Timer</span>
+    </div>
+    <button id="close-timer-modal" class="p-1 rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700"><i data-lucide="x" class="w-4 h-4"></i></button>
+  </div>
+
+  <div class="space-y-4">
+    <!-- Option 1: Count Up Stopwatch -->
+    <div class="rounded-2xl border border-slate-200 bg-slate-50/50 p-3 hover:border-slate-300 transition">
+      <div class="flex items-center justify-between mb-1">
+        <span class="font-semibold text-xs text-slate-800">Count Up (Stopwatch)</span>
+        <span class="text-[10px] text-slate-400">00:00:00 ➔ ∞</span>
+      </div>
+      <p class="text-[11px] text-slate-500 mb-2.5 leading-snug">Starts counting upward until you stop it or exit the whiteboard.</p>
+      <button id="btn-timer-countup" class="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shadow-xs flex items-center justify-center gap-1.5 transition active:scale-98">
+        <i data-lucide="play" class="w-3.5 h-3.5"></i>
+        <span>Start Count Up</span>
+      </button>
+    </div>
+
+    <!-- Option 2: Set Timer Countdown -->
+    <div class="rounded-2xl border border-slate-200 bg-slate-50/50 p-3 hover:border-slate-300 transition">
+      <div class="flex items-center justify-between mb-1">
+        <span class="font-semibold text-xs text-slate-800">Set Timer (Countdown)</span>
+        <span class="text-[10px] text-slate-400">Presets & Custom</span>
+      </div>
+      <p class="text-[11px] text-slate-500 mb-2.5 leading-snug">Select duration or double-click the widget anytime on canvas to set minutes/seconds.</p>
+      
+      <div class="grid grid-cols-4 gap-1.5 mb-2.5">
+        <button data-duration="60" class="btn-preset-timer py-1.5 rounded-xl bg-white border border-slate-200 hover:border-slate-400 font-semibold text-xs text-slate-800 shadow-2xs transition">1 min</button>
+        <button data-duration="120" class="btn-preset-timer py-1.5 rounded-xl bg-white border border-slate-200 hover:border-slate-400 font-semibold text-xs text-slate-800 shadow-2xs transition">2 mins</button>
+        <button data-duration="300" class="btn-preset-timer py-1.5 rounded-xl bg-white border border-slate-200 hover:border-slate-400 font-semibold text-xs text-slate-800 shadow-2xs transition">5 mins</button>
+        <button data-duration="600" class="btn-preset-timer py-1.5 rounded-xl bg-white border border-slate-200 hover:border-slate-400 font-semibold text-xs text-slate-800 shadow-2xs transition">10 mins</button>
+      </div>
+
+      <div class="flex items-center gap-1.5 pt-1">
+        <input type="number" id="custom-timer-min" min="1" max="999" placeholder="Custom mins" class="w-full h-8 px-2.5 text-xs rounded-xl border border-slate-200 bg-white focus:outline-slate-900 focus:ring-1 focus:ring-slate-900">
+        <button id="btn-timer-custom" class="h-8 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shrink-0 transition shadow-2xs">Set</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Manual Timer Edit Popover/Modal (Double-click widget on canvas) -->
+<div id="timer-edit-modal" class="hidden absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-white/95 border border-slate-200/90 rounded-3xl p-5 shadow-2xl backdrop-blur-md w-[280px] animate-in fade-in zoom-in-95 duration-150">
+  <div class="flex items-center justify-between border-b pb-2 mb-3">
+    <span class="font-bold text-xs text-slate-900">Edit Timer Value</span>
+    <button id="close-timer-edit" class="p-1 rounded-full text-slate-400 hover:bg-slate-100"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+  </div>
+  <div class="space-y-3">
+    <div>
+      <label class="text-[11px] text-slate-500 font-medium block mb-1">Time (MM:SS or Seconds)</label>
+      <input type="text" id="manual-timer-input" placeholder="e.g. 05:00 or 90" class="w-full h-9 px-3 text-sm font-semibold rounded-xl border border-slate-200 bg-white focus:outline-slate-900">
+    </div>
+    <div class="flex gap-2">
+      <button id="btn-save-manual-timer" class="flex-1 py-2 rounded-xl bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition">Save</button>
+      <button id="btn-cancel-manual-timer" class="px-3 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200 transition">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="top-right-actions" class="absolute top-4 right-4 z-10 flex gap-2">
+<button id="undo-btn" class="p-2.5 bg-white/90 border rounded-full shadow-sm disabled:opacity-40"><i data-lucide="undo-2" class="w-4 h-4"></i></button>
+<button id="redo-btn" class="p-2.5 bg-white/90 border rounded-full shadow-sm disabled:opacity-40"><i data-lucide="redo-2" class="w-4 h-4"></i></button>
+<button id="toggle-minimap-btn" class="p-2.5 bg-white/90 border rounded-full shadow-sm"><i data-lucide="map" class="w-4 h-4"></i></button>
+<button id="export-png-btn" class="px-3 py-1.5 bg-white/90 border rounded-full text-xs font-semibold flex gap-1 shadow-sm items-center"><i data-lucide="download" class="w-3.5 h-3.5"></i> PNG</button>
+<button id="clear-btn" class="p-2.5 bg-white/90 border rounded-full text-red-500 shadow-sm"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+</div>
+
+<div id="minimap-container" class="hidden absolute bottom-4 right-4 z-10 bg-white/90 border rounded-xl p-2 shadow-lg w-52 h-36 flex flex-col justify-between">
+<div class="flex justify-between text-[9px] font-bold uppercase text-slate-400"><span>Live Minimap • Drag to pan</span><button id="close-minimap"><i data-lucide="x" class="w-3 h-3"></i></button></div>
+<canvas id="minimap-canvas" width="200" height="96" class="w-full h-24 bg-slate-50 border rounded cursor-grab"></canvas>
+<div id="object-counter" class="text-[10px] text-slate-400 text-right">100% • 0</div>
+</div>
+
+<div id="zoom-controls" class="absolute bottom-4 left-4 z-10 bg-white/90 border rounded-full px-1.5 py-1 flex items-center gap-1 shadow-sm">
+<button type="button" id="zoom-out" class="w-7 h-7 rounded-full hover:bg-slate-100 text-sm font-semibold">−</button>
+<span id="zoom-label" class="text-[11px] w-10 text-center tabular-nums text-slate-600">100%</span>
+<button type="button" id="zoom-in" class="w-7 h-7 rounded-full hover:bg-slate-100 text-sm font-semibold">+</button>
+<span class="w-px h-4 bg-slate-200"></span>
+<button type="button" id="zoom-fit" title="Fit to screen" class="h-7 px-2 rounded-full hover:bg-slate-100 text-[11px] font-semibold flex items-center gap-1"><i data-lucide="maximize" class="w-3.5 h-3.5"></i>Fit</button>
+<button type="button" id="zoom-reset" title="Reset to 100%" class="h-7 px-2 rounded-full hover:bg-slate-100 text-[11px] font-semibold">100%</button>
+</div>
+
