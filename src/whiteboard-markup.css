@@ -636,8 +636,8 @@ input[type="range"].fat-range::-moz-range-thumb{
   background-color: #0f172a !important;
   color: #e2e8f0 !important;
 }
-.toolbar-theme-classlight .popover-menu,
-.toolbar-theme-classlight #settings-menu,
+.toolbar-theme-classlight .popover-menu:not(.shapes-stealth-panel),
+.toolbar-theme-classlight #settings-menu:not(.shapes-stealth-panel),
 .toolbar-theme-classlight #right-click-menu {
   background-color: rgba(255, 255, 255, 0.98) !important;
   color: #0f172a !important;
@@ -646,4 +646,85 @@ input[type="range"].fat-range::-moz-range-thumb{
 .toolbar-theme-blueprint .popover-menu .font-bold,
 .theme-dark .popover-menu .font-bold {
   color: #e2e8f0 !important;
+}
+
+/* Stealth shapes panel keeps its dark surface in every theme */
+.toolbar-theme-classlight .shapes-stealth-panel,
+.toolbar-theme-blueprint .shapes-stealth-panel,
+.theme-dark .shapes-stealth-panel,
+.theme-light-glass .shapes-stealth-panel {
+  background: #141416 !important;
+  color: #f4f4f5 !important;
+  border-color: rgba(228, 228, 231, 0.24) !important;
+}
+.toolbar-theme-classlight .shapes-stealth-panel button,
+.toolbar-theme-blueprint .shapes-stealth-panel button,
+.theme-dark .shapes-stealth-panel button {
+  color: #ffffff !important;
+}
+.toolbar-theme-classlight .shapes-stealth-panel .stealth-shape-btn,
+.toolbar-theme-blueprint .shapes-stealth-panel .stealth-shape-btn,
+.theme-dark .shapes-stealth-panel .stealth-shape-btn {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
+}
+
+/* Timer dialogs: give them explicit surfaces per theme (they were left white
+   while the theme recolored their text, making the content unreadable). */
+.toolbar-theme-classlight #timer-config-modal,
+.toolbar-theme-classlight #timer-edit-modal {
+  background: rgba(255, 255, 255, 0.98) !important;
+  border-color: rgba(226, 232, 240, 0.95) !important;
+  color: #0f172a !important;
+}
+.toolbar-theme-classlight #timer-config-modal .text-slate-900,
+.toolbar-theme-classlight #timer-edit-modal .text-slate-900,
+.toolbar-theme-classlight #timer-config-modal .text-slate-800,
+.toolbar-theme-classlight #timer-edit-modal .text-slate-800 {
+  color: #0f172a !important;
+}
+.toolbar-theme-blueprint #timer-config-modal,
+.toolbar-theme-blueprint #timer-edit-modal,
+.theme-dark #timer-config-modal,
+.theme-dark #timer-edit-modal {
+  background: #1e2433 !important;
+  border-color: rgba(96, 165, 250, 0.25) !important;
+  color: #f1f5f9 !important;
+}
+.toolbar-theme-blueprint #timer-config-modal .text-slate-900,
+.toolbar-theme-blueprint #timer-config-modal .text-slate-800,
+.toolbar-theme-blueprint #timer-edit-modal .text-slate-900,
+.toolbar-theme-blueprint #timer-edit-modal .text-slate-800,
+.theme-dark #timer-config-modal .text-slate-900,
+.theme-dark #timer-config-modal .text-slate-800,
+.theme-dark #timer-edit-modal .text-slate-900,
+.theme-dark #timer-edit-modal .text-slate-800 {
+  color: #f8fafc !important;
+}
+.toolbar-theme-blueprint #timer-config-modal .text-slate-500,
+.toolbar-theme-blueprint #timer-config-modal .text-slate-400,
+.theme-dark #timer-config-modal .text-slate-500,
+.theme-dark #timer-config-modal .text-slate-400 {
+  color: #94a3b8 !important;
+}
+.toolbar-theme-blueprint #timer-config-modal .btn-preset-timer,
+.theme-dark #timer-config-modal .btn-preset-timer,
+.toolbar-theme-blueprint #timer-config-modal input[type="number"],
+.toolbar-theme-blueprint #timer-edit-modal input,
+.theme-dark #timer-config-modal input[type="number"],
+.theme-dark #timer-edit-modal input {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  color: #f8fafc !important;
+}
+.toolbar-theme-blueprint #timer-config-modal .bg-slate-900,
+.theme-dark #timer-config-modal .bg-slate-900,
+.toolbar-theme-blueprint #timer-edit-modal .bg-slate-900,
+.theme-dark #timer-edit-modal .bg-slate-900 {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
+}
+.toolbar-theme-blueprint #timer-config-modal .bg-slate-900 *,
+.theme-dark #timer-config-modal .bg-slate-900 * {
+  color: #ffffff !important;
 }
