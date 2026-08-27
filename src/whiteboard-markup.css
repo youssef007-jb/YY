@@ -728,3 +728,16 @@ input[type="range"].fat-range::-moz-range-thumb{
 .theme-dark #timer-config-modal .bg-slate-900 * {
   color: #ffffff !important;
 }
+.toolbar-theme-blueprint #timer-config-modal > .space-y-4 > div,
+.theme-dark #timer-config-modal > .space-y-4 > div {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border-color: rgba(96, 165, 250, 0.22) !important;
+}
+.toolbar-theme-blueprint #timer-config-modal p,
+.toolbar-theme-blueprint #timer-config-modal .text-slate-500,
+.toolbar-theme-blueprint #timer-config-modal .text-slate-400,
+.theme-dark #timer-config-modal p,
+.theme-dark #timer-config-modal .text-slate-500,
+.theme-dark #timer-config-modal .text-slate-400 {
+  color: #cbd5e1 !important;
+}
