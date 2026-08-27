@@ -1282,14 +1282,13 @@ function HomePage() {
       <header className="border-b bg-card/70 backdrop-blur sticky top-0 z-20">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-2 sm:py-2.5">
           <div className="flex items-center gap-2.5 sm:gap-3">
-            <div className="relative flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl shadow-sm">
-              <img
-                src="/app-logo.png"
-                alt="Yow Yow Icon"
-                className="h-full w-full object-contain rounded-xl"
-                referrerPolicy="no-referrer"
-              />
-            </div>
+            <img
+              src="/app-logo.png"
+              alt="Yow Yow"
+              className="h-8 w-8 object-contain shrink-0"
+              style={{ width: "32px", height: "32px", objectFit: "contain", background: "transparent", borderRadius: "6px", border: "none", boxShadow: "none", padding: 0 }}
+              referrerPolicy="no-referrer"
+            />
             <div>
               <h1 className="text-base sm:text-lg font-semibold tracking-tight leading-tight">{t("appTitle")}</h1>
               <p className="text-[11px] sm:text-xs text-muted-foreground leading-tight">
@@ -1369,14 +1368,13 @@ function HomePage() {
 
         {boards !== null && boards.length === 0 && (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed py-24 text-center">
-            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl shadow-sm overflow-hidden">
-              <img
-                src="/app-logo.png"
-                alt="Yow Yow Icon"
-                className="h-full w-full object-contain rounded-2xl"
-                referrerPolicy="no-referrer"
-              />
-            </div>
+            <img
+              src="/app-logo.png"
+              alt="Yow Yow"
+              className="mb-4 h-14 w-14 object-contain shrink-0"
+              style={{ width: "56px", height: "56px", objectFit: "contain", background: "transparent", borderRadius: "6px", border: "none", boxShadow: "none", padding: 0 }}
+              referrerPolicy="no-referrer"
+            />
             <h2 className="text-base font-semibold">{t("noBoardsTitle")}</h2>
             <p className="mt-1 max-w-sm text-sm text-muted-foreground">{t("noBoardsDesc")}</p>
             <Button

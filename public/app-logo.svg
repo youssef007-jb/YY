@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Clip path to ensure pure smooth rounded squircle corners -->
+    <clipPath id="squircle-clip">
+      <rect x="8" y="8" width="496" height="496" rx="96" ry="96" />
+    </clipPath>
+  </defs>
+
+  <!-- Yellow Outer Rounded Badge -->
+  <rect x="8" y="8" width="496" height="496" rx="96" ry="96" fill="#FFC800"/>
+
+  <!-- Distinct Inner Black Contour Border matching the user icon -->
+  <rect x="28" y="28" width="456" height="456" rx="76" ry="76" fill="none" stroke="#000000" stroke-width="22" stroke-linejoin="round" stroke-linecap="round"/>
+
+  <!-- Logo Graphics in Bold Black -->
+  <g fill="#000000">
+    <!-- Top "Yow" -->
+    <!-- Letter Y -->
+    <path d="M 125 116 L 168 184 L 168 228 L 196 228 L 196 184 L 238 116 L 204 116 L 182 158 L 159 116 Z"/>
+    <!-- Letter o -->
+    <path d="M 276 138 C 254 138 238 155 238 183 C 238 211 254 228 276 228 C 298 228 314 211 314 183 C 314 155 298 138 276 138 Z M 276 160 C 285 160 290 169 290 183 C 290 197 285 206 276 206 C 267 206 262 197 262 183 C 262 169 267 160 276 160 Z"/>
+    <!-- Letter w -->
+    <path d="M 324 142 L 342 228 L 362 228 L 377 165 L 392 228 L 412 228 L 430 142 L 406 142 L 396 198 L 382 142 L 372 142 L 358 198 L 348 142 Z"/>
+
+    <!-- Bottom "Yow" -->
+    <!-- Letter Y -->
+    <path d="M 125 248 L 168 316 L 168 360 L 196 360 L 196 316 L 238 248 L 204 248 L 182 290 L 159 248 Z"/>
+    <!-- Letter o -->
+    <path d="M 276 270 C 254 270 238 287 238 315 C 238 343 254 360 276 360 C 298 360 314 343 314 315 C 314 287 298 270 276 270 Z M 276 292 C 285 292 290 301 290 315 C 290 329 285 338 276 338 C 267 338 262 329 262 315 C 262 301 267 292 276 292 Z"/>
+    <!-- Letter w with sweeping pen nib tail -->
+    <path d="M 324 274 L 342 360 L 362 360 L 377 297 L 392 360 L 412 360 L 430 274 L 406 274 L 396 330 L 382 274 L 372 274 L 358 330 L 348 274 Z"/>
+
+    <!-- Sweeping Tail connecting w to Fountain Pen Nib -->
+    <path d="M 406 352 C 406 395 385 418 342 422 L 236 422 C 230 422 225 420 225 413 L 225 397 C 225 390 230 388 236 388 L 340 388 C 362 386 376 374 376 352 Z"/>
+    
+    <!-- Pen Collar / Ring -->
+    <rect x="210" y="388" width="12" height="34" rx="2" fill="#000000"/>
+
+    <!-- Fountain Pen Nib pointing to left -->
+    <path d="M 202 388 L 175 388 C 158 392 142 400 120 405 C 142 410 158 418 175 422 L 202 422 Z"/>
+    <!-- Nib breathing hole & ink slit cutout in matching yellow -->
+    <circle cx="172" cy="405" r="4.5" fill="#FFC800"/>
+    <rect x="120" y="403.5" width="52" height="3" fill="#FFC800"/>
+  </g>
+</svg>
