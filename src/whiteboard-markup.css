@@ -607,3 +607,43 @@ input[type="range"].fat-range::-moz-range-thumb{
 }
 
 
+
+/* Fix: generic .bg-white / .bg-slate-50 / .bg-slate-100 theme overrides were
+   winning over the panel surface rules, leaving toolbar popovers see-through
+   and their labels unreadable. Restore opaque surfaces for panels. */
+.toolbar-theme-blueprint .popover-menu.bg-white,
+.toolbar-theme-blueprint #settings-menu.bg-white,
+.toolbar-theme-blueprint #boards-modal.bg-white,
+.toolbar-theme-blueprint #right-click-menu.bg-white,
+.toolbar-theme-blueprint #timer-panel.bg-white,
+.toolbar-theme-blueprint #spotlight-panel.bg-white,
+.toolbar-theme-blueprint #minimap-container.bg-white,
+.toolbar-theme-blueprint .sticky-color-rail.bg-white,
+.toolbar-theme-blueprint #selection-toolbar.bg-white {
+  background-color: #1e2433 !important;
+  color: #f1f5f9 !important;
+}
+.theme-dark .popover-menu.bg-white,
+.theme-dark #settings-menu.bg-white,
+.theme-dark #boards-modal.bg-white,
+.theme-dark #right-click-menu.bg-white,
+.theme-dark #timer-panel.bg-white,
+.theme-dark #spotlight-panel.bg-white,
+.theme-dark #minimap-container.bg-white,
+.theme-dark .sticky-color-rail.bg-white,
+.theme-dark #selection-toolbar.bg-white,
+.theme-dark #main-toolbar.bg-white {
+  background-color: #0f172a !important;
+  color: #e2e8f0 !important;
+}
+.toolbar-theme-classlight .popover-menu,
+.toolbar-theme-classlight #settings-menu,
+.toolbar-theme-classlight #right-click-menu {
+  background-color: rgba(255, 255, 255, 0.98) !important;
+  color: #0f172a !important;
+}
+/* section headings inside panels must follow the panel surface, not stay slate-500 */
+.toolbar-theme-blueprint .popover-menu .font-bold,
+.theme-dark .popover-menu .font-bold {
+  color: #e2e8f0 !important;
+}
