@@ -63,8 +63,10 @@
 <button id="rc-delete" class="w-full text-left px-3 py-2 hover:bg-red-50 text-red-500 flex gap-2 items-center"><i data-lucide="trash-2" class="w-4 h-4"></i> Delete</button>
 </div>
 
-<div class="absolute top-4 left-4 z-10 bg-white/90 border rounded-full px-4 py-2 flex gap-3 shadow-sm items-center title-pill">
-<button id="home-btn" title="Back to homepage" class="w-7 h-7 rounded-full bg-slate-900 text-white font-bold flex items-center justify-center text-xs hover:bg-slate-700"><i data-lucide="home" class="w-3.5 h-3.5"></i></button>
+<div class="absolute top-4 left-4 z-10 bg-white/95 border rounded-full px-2.5 py-1.5 flex gap-2.5 shadow-sm items-center title-pill backdrop-blur">
+<button id="home-btn" title="Back to homepage" aria-label="Back to homepage" class="relative group flex items-center justify-center w-7 h-7 rounded-lg overflow-hidden bg-white hover:bg-slate-100 active:scale-95 transition-all cursor-pointer ring-1 ring-slate-300/80 shadow-xs shrink-0">
+<img src="/app-logo.png" alt="Yow Yow" class="w-full h-full object-contain grayscale contrast-150 brightness-95 group-hover:scale-105 transition-transform" />
+</button>
 <input id="board-title" value="" placeholder="Untitled Whiteboard" class="font-semibold text-sm bg-transparent outline-none w-44">
 </div>
 

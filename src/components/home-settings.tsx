@@ -42,7 +42,7 @@ export function applyTheme(mode: ThemeMode) {
   }
 }
 
-export function HomeSettings() {
+export function HomeSettings({ className }: { className?: string }) {
   const { lang, setLang, t } = useI18n();
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>("light");
@@ -62,11 +62,11 @@ export function HomeSettings() {
       <Button
         variant="ghost"
         size="icon"
-        className="h-10 w-10 rounded-full"
+        className={className || "h-9 w-9 rounded-full shrink-0"}
         onClick={() => setOpen(true)}
         aria-label={t("settings")}
       >
-        <Settings className="h-5 w-5" />
+        <Settings className="h-4 w-4" />
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-sm">

@@ -1242,15 +1242,20 @@ function HomePage() {
 
   return (
     <main className="min-h-dvh bg-background">
-      <header className="border-b bg-card/70 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-              <PanelsTopLeft className="h-5 w-5" />
+      <header className="border-b bg-card/70 backdrop-blur sticky top-0 z-20">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-2 sm:py-2.5">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="relative flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl shadow-sm">
+              <img
+                src="/app-logo.png"
+                alt="Yow Yow Icon"
+                className="h-full w-full object-contain rounded-xl"
+                referrerPolicy="no-referrer"
+              />
             </div>
             <div>
-              <h1 className="text-lg font-semibold tracking-tight">{t("appTitle")}</h1>
-              <p className="text-xs text-muted-foreground">
+              <h1 className="text-base sm:text-lg font-semibold tracking-tight leading-tight">{t("appTitle")}</h1>
+              <p className="text-[11px] sm:text-xs text-muted-foreground leading-tight">
                 {boards
                   ? totalCount === 1
                     ? t("boardCountOne")
@@ -1259,15 +1264,15 @@ function HomePage() {
               </p>
             </div>
           </div>
-          <div className="flex flex-1 flex-wrap items-center justify-end gap-2.5">
+          <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t("searchPlaceholder")}
-              className="h-9 w-full max-w-xs sm:w-56"
+              className="h-8.5 w-full max-w-xs text-xs sm:w-48 md:w-56"
             />
             <Select value={phaseFilter} onValueChange={setPhaseFilter}>
-              <SelectTrigger className="h-9 w-40">
+              <SelectTrigger className="h-8.5 w-36 sm:w-40 text-xs">
                 <SelectValue placeholder={t("selectPhase")} />
               </SelectTrigger>
               <SelectContent className="max-h-[216px] overflow-y-auto">
@@ -1293,16 +1298,20 @@ function HomePage() {
               variant="outline"
               size="icon"
               onClick={() => fileInputRef.current?.click()}
-              className="h-9 w-9 rounded-full shrink-0"
+              className="h-8.5 w-8.5 rounded-full shrink-0"
               title="Upload whiteboard, picture, or PDF"
               aria-label="Upload whiteboard, picture, or PDF"
             >
-              <Upload className="h-4 w-4" />
+              <Upload className="h-3.5 w-3.5" />
             </Button>
 
-            <HomeSettings />
-            <Button onClick={handleCreate} disabled={busy} className="h-9 rounded-full px-4 text-xs font-medium shadow-sm">
-              <Plus className="mr-1.5 h-3.5 w-3.5" /> {t("newWhiteboard")}
+            <HomeSettings className="h-8.5 w-8.5 rounded-full shrink-0" />
+            <Button
+              onClick={handleCreate}
+              disabled={busy}
+              className="h-8.5 rounded-full px-3.5 text-xs font-bold bg-[#f5be18] hover:bg-[#e2ad0c] text-black border border-black/15 shadow-sm transition-all active:scale-[0.98]"
+            >
+              <Plus className="mr-1.5 h-3.5 w-3.5 text-black stroke-[2.5]" /> {t("newWhiteboard")}
             </Button>
           </div>
         </div>
@@ -1323,13 +1332,22 @@ function HomePage() {
 
         {boards !== null && boards.length === 0 && (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed py-24 text-center">
-            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
-              <PanelsTopLeft className="h-6 w-6 text-muted-foreground" />
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl shadow-sm overflow-hidden">
+              <img
+                src="/app-logo.png"
+                alt="Yow Yow Icon"
+                className="h-full w-full object-contain rounded-2xl"
+                referrerPolicy="no-referrer"
+              />
             </div>
             <h2 className="text-base font-semibold">{t("noBoardsTitle")}</h2>
             <p className="mt-1 max-w-sm text-sm text-muted-foreground">{t("noBoardsDesc")}</p>
-            <Button onClick={handleCreate} disabled={busy} className="mt-6 rounded-full">
-              <Plus className="h-4 w-4" /> {t("newWhiteboard")}
+            <Button
+              onClick={handleCreate}
+              disabled={busy}
+              className="mt-6 rounded-full px-5 py-2.5 text-sm font-bold bg-[#f5be18] hover:bg-[#e2ad0c] text-black border border-black/15 shadow-sm transition-all active:scale-[0.98]"
+            >
+              <Plus className="mr-1.5 h-4 w-4 text-black stroke-[2.5]" /> {t("newWhiteboard")}
             </Button>
           </div>
         )}

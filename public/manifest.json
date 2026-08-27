@@ -1,0 +1,17 @@
+{
+  "name": "Yow Yow",
+  "short_name": "Yow Yow",
+  "description": "Interactive whiteboard and smart canvas with drawing tools, collaboration features, and board management.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#facc15",
+  "icons": [
+    {
+      "src": "/app-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
