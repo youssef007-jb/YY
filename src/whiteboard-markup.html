@@ -313,12 +313,20 @@
   </div>
 </div>
 
+<div id="smart-toast" class="pointer-events-none fixed top-16 left-1/2 -translate-x-1/2 z-[9999] opacity-0 -translate-y-2 transition-all duration-300 flex items-center gap-2 px-4 py-2 bg-slate-900/90 text-white backdrop-blur-md shadow-2xl rounded-full text-xs font-medium border border-white/20">
+  <span id="smart-toast-icon">✨</span>
+  <span id="smart-toast-msg">Smart PNG</span>
+</div>
+
 <div id="top-right-actions" class="absolute top-4 right-4 z-10 flex gap-2">
-<button id="undo-btn" class="p-2.5 bg-white/90 border rounded-full shadow-sm disabled:opacity-40"><i data-lucide="undo-2" class="w-4 h-4"></i></button>
-<button id="redo-btn" class="p-2.5 bg-white/90 border rounded-full shadow-sm disabled:opacity-40"><i data-lucide="redo-2" class="w-4 h-4"></i></button>
-<button id="toggle-minimap-btn" class="p-2.5 bg-white/90 border rounded-full shadow-sm"><i data-lucide="map" class="w-4 h-4"></i></button>
-<button id="export-png-btn" class="px-3 py-1.5 bg-white/90 border rounded-full text-xs font-semibold flex gap-1 shadow-sm items-center"><i data-lucide="download" class="w-3.5 h-3.5"></i> PNG</button>
-<button id="clear-btn" class="p-2.5 bg-white/90 border rounded-full text-red-500 shadow-sm"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+<button id="undo-btn" title="Undo (Ctrl+Z)" class="p-2.5 bg-white/90 hover:bg-white border rounded-full shadow-sm disabled:opacity-40 transition"><i data-lucide="undo-2" class="w-4 h-4"></i></button>
+<button id="redo-btn" title="Redo (Ctrl+Y)" class="p-2.5 bg-white/90 hover:bg-white border rounded-full shadow-sm disabled:opacity-40 transition"><i data-lucide="redo-2" class="w-4 h-4"></i></button>
+<button id="toggle-minimap-btn" title="Toggle Minimap" class="p-2.5 bg-white/90 hover:bg-white border rounded-full shadow-sm transition"><i data-lucide="map" class="w-4 h-4"></i></button>
+<button id="export-png-btn" title="Export as Smart PNG — standard image with editable canvas data embedded" class="px-3 py-1.5 bg-white/95 hover:bg-white border border-emerald-200/80 rounded-full text-xs font-semibold flex gap-1.5 shadow-sm items-center transition active:scale-95 text-slate-800 hover:text-emerald-700">
+  <i data-lucide="sparkles" class="w-3.5 h-3.5 text-emerald-600"></i>
+  <span>Smart PNG</span>
+</button>
+<button id="clear-btn" title="Wipe Board" class="p-2.5 bg-white/90 hover:bg-white border rounded-full text-red-500 shadow-sm transition"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
 </div>
 
 <div id="minimap-container" class="hidden absolute bottom-4 right-4 z-10 bg-white/90 border rounded-xl p-2 shadow-lg w-52 h-36 flex flex-col justify-between">

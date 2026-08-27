@@ -442,6 +442,189 @@ function goHome(){
 
 function clearUndo(){state.undoStack=[];state.redoStack=[];updateUndoRedoUI();}
 
+function showSmartToast(msg, icon="✨", duration=3000){
+  const t = document.getElementById("smart-toast");
+  const m = document.getElementById("smart-toast-msg");
+  const ic = document.getElementById("smart-toast-icon");
+  if(!t) return;
+  if(m) m.textContent = msg;
+  if(ic) ic.textContent = icon;
+  t.classList.remove("opacity-0", "-translate-y-2");
+  t.classList.add("opacity-100", "translate-y-0");
+  clearTimeout(showSmartToast._timer);
+  showSmartToast._timer = setTimeout(()=>{
+    t.classList.remove("opacity-100", "translate-y-0");
+    t.classList.add("opacity-0", "-translate-y-2");
+  }, duration);
+}
+
+let _crc32Table = null;
+function getPngCrcTable(){
+  if(_crc32Table) return _crc32Table;
+  const t = new Uint32Array(256);
+  for(let n=0; n<256; n++){
+    let c = n;
+    for(let k=0; k<8; k++){
+      c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    }
+    t[n] = c >>> 0;
+  }
+  _crc32Table = t;
+  return t;
+}
+
+function calcPngCrc32(bytes, offset, length){
+  const table = getPngCrcTable();
+  let crc = 0xffffffff;
+  for(let i=offset; i<offset+length; i++){
+    crc = (crc >>> 8) ^ table[(crc ^ bytes[i]) & 0xff];
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+async function embedSmartPngMetadataFallback(blob, boardData){
+  const buf = await blob.arrayBuffer();
+  const sourceBytes = new Uint8Array(buf);
+  if(sourceBytes.length < 8 || sourceBytes[0] !== 137 || sourceBytes[1] !== 80) return blob;
+  const payload = {
+    version: 1,
+    appName: "Smart Canvas",
+    exportedAt: Date.now(),
+    name: boardData.name || "Untitled Whiteboard",
+    bgColor: boardData.bgColor || "#ffffff",
+    theme: boardData.theme || "classlight",
+    gridStyle: boardData.gridStyle || "none",
+    gridSpacing: boardData.gridSpacing || 24,
+    camera: boardData.camera || { x: 0, y: 0, zoom: 1 },
+    elements: (boardData.elements || []).map(el => {
+      const { img, _handles, _fadeInterval, fireStarted, _fresh, ...clean } = el;
+      if(clean.type === "vanishing") return { ...clean, opacity: 1 };
+      return clean;
+    })
+  };
+  const jsonStr = JSON.stringify(payload);
+  const textPayload = "__HBIBO_SMART_CANVAS_V1__:" + jsonStr;
+  const enc = new TextEncoder();
+  const keyBytes = enc.encode("SmartCanvas");
+  const dataBytes = enc.encode(textPayload);
+  const chunkDataLen = keyBytes.length + 1 + dataBytes.length;
+  const chunkData = new Uint8Array(chunkDataLen);
+  chunkData.set(keyBytes, 0);
+  chunkData[keyBytes.length] = 0;
+  chunkData.set(dataBytes, keyBytes.length + 1);
+
+  const chunk = new Uint8Array(4 + 4 + chunkDataLen + 4);
+  const view = new DataView(chunk.buffer);
+  view.setUint32(0, chunkDataLen, false);
+  chunk[4] = 116; chunk[5] = 69; chunk[6] = 88; chunk[7] = 116; // 'tEXt'
+  chunk.set(chunkData, 8);
+  const crc = calcPngCrc32(chunk, 4, 4 + chunkDataLen);
+  view.setUint32(8 + chunkDataLen, crc, false);
+
+  let insertOffset = 33;
+  if(sourceBytes.length > 16){
+    const type = String.fromCharCode(sourceBytes[12], sourceBytes[13], sourceBytes[14], sourceBytes[15]);
+    if(type === "IHDR"){
+      const ihdrLen = new DataView(sourceBytes.buffer).getUint32(8, false);
+      insertOffset = 8 + 4 + 4 + ihdrLen + 4;
+    }
+  }
+  const combined = new Uint8Array(sourceBytes.length + chunk.length);
+  combined.set(sourceBytes.subarray(0, insertOffset), 0);
+  combined.set(chunk, insertOffset);
+  combined.set(sourceBytes.subarray(insertOffset), insertOffset + chunk.length);
+  return new Blob([combined], { type: "image/png" });
+}
+
+async function extractSmartPngMetadataFallback(file){
+  try {
+    const arrayBuf = await file.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuf);
+    if(bytes.length < 8 || bytes[0] !== 137 || bytes[1] !== 80) return null;
+    const view = new DataView(bytes.buffer);
+    const decoder = new TextDecoder("utf-8");
+    let offset = 8;
+    while(offset + 8 <= bytes.length){
+      const length = view.getUint32(offset, false);
+      const type = String.fromCharCode(bytes[offset+4], bytes[offset+5], bytes[offset+6], bytes[offset+7]);
+      const dataStart = offset + 8;
+      const dataEnd = dataStart + length;
+      if(dataEnd > bytes.length) break;
+      if(type === "tEXt" || type === "iTXt"){
+        let nullIdx = -1;
+        for(let i = dataStart; i < dataEnd; i++){
+          if(bytes[i] === 0){ nullIdx = i; break; }
+        }
+        if(nullIdx !== -1){
+          const text = decoder.decode(bytes.subarray(nullIdx + 1, dataEnd));
+          let clean = text.trim();
+          if(clean.startsWith("__HBIBO_SMART_CANVAS_V1__:")){
+            clean = clean.slice("__HBIBO_SMART_CANVAS_V1__:".length);
+          }
+          try {
+            const parsed = JSON.parse(clean);
+            if(parsed && (Array.isArray(parsed.elements) || Array.isArray(parsed))){
+              const els = Array.isArray(parsed.elements) ? parsed.elements : (Array.isArray(parsed) ? parsed : []);
+              return {
+                name: parsed.name || "Imported Whiteboard",
+                elements: els,
+                bgColor: parsed.bgColor || "#ffffff",
+                theme: parsed.theme || "classlight",
+                gridStyle: parsed.gridStyle || "none",
+                gridSpacing: parsed.gridSpacing || 24,
+                camera: parsed.camera || { x: 0, y: 0, zoom: 1 }
+              };
+            }
+          } catch(e){}
+        }
+      } else if(type === "IEND"){
+        break;
+      }
+      offset = dataEnd + 4;
+    }
+    // Raw binary fallback scan
+    const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+    const sig = "__HBIBO_SMART_CANVAS_V1__:";
+    const idx = text.indexOf(sig);
+    if(idx !== -1){
+      const jsonStart = idx + sig.length;
+      let depth = 0, jsonEnd = -1;
+      for(let i=jsonStart; i<text.length; i++){
+        if(text[i] === "{") depth++;
+        else if(text[i] === "}"){
+          depth--;
+          if(depth === 0){ jsonEnd = i + 1; break; }
+        }
+      }
+      if(jsonEnd !== -1){
+        const parsed = JSON.parse(text.slice(jsonStart, jsonEnd));
+        return {
+          name: parsed.name || "Imported Whiteboard",
+          elements: parsed.elements || [],
+          bgColor: parsed.bgColor || "#ffffff",
+          theme: parsed.theme || "classlight",
+          gridStyle: parsed.gridStyle || "none",
+          gridSpacing: parsed.gridSpacing || 24,
+          camera: parsed.camera || { x: 0, y: 0, zoom: 1 }
+        };
+      }
+    }
+  } catch(err){
+    console.warn("Smart PNG extraction failed", err);
+  }
+  return null;
+}
+
+async function getSmartPngEngine(){
+  if(window.SmartPNG && typeof window.SmartPNG.embedSmartPngMetadata === "function"){
+    return window.SmartPNG;
+  }
+  return {
+    embedSmartPngMetadata: embedSmartPngMetadataFallback,
+    extractSmartPngMetadata: extractSmartPngMetadataFallback
+  };
+}
+
 function exportAllLayers(){
   const b=currentBoardRecord(); if(!b) return;
   syncCurrentRecord();
@@ -453,7 +636,36 @@ function exportAllLayers(){
   a.click();
 }
 
-function importBoardsFile(file){
+async function importBoardsFile(file){
+  if(!file) return;
+  const isPng = file.type === "image/png" || /\.png$/i.test(file.name||"");
+  if(isPng){
+    try {
+      const engine = await getSmartPngEngine();
+      const smartData = await engine.extractSmartPngMetadata(file);
+      if(smartData && Array.isArray(smartData.elements) && smartData.elements.length > 0){
+        pushUndo();
+        const newIds = [];
+        smartData.elements.forEach(el => {
+          if(!el.id) el.id = genId();
+          newIds.push(el.id);
+          state.elements.push(el);
+          ensureImageLoaded(el);
+        });
+        if(state.elements.length === smartData.elements.length){
+          if(smartData.bgColor) state.bgColor = smartData.bgColor;
+          if(smartData.theme) applyTheme(smartData.theme);
+        }
+        saveBoards(true);
+        render();
+        showSmartToast(`✨ Smart PNG imported: ${smartData.elements.length} editable elements!`, "✨");
+        return;
+      }
+    } catch(err){
+      console.warn("Smart PNG import check failed", err);
+    }
+  }
+
   const r=new FileReader();
   r.onload=e=>{
     try{
@@ -462,14 +674,16 @@ function importBoardsFile(file){
       if(!b) return;
       if(Array.isArray(j)){
         pushUndo();
-        j.forEach(el=>{if(!el.id) el.id=genId(); state.elements.push(el);});
+        j.forEach(el=>{if(!el.id) el.id=genId(); state.elements.push(el); ensureImageLoaded(el);});
         saveBoards(true); render();
+        showSmartToast(`Imported ${j.length} elements`, "📄");
       } else if(j.elements && Array.isArray(j.elements)){
         pushUndo();
-        j.elements.forEach(el=>{if(!el.id) el.id=genId(); state.elements.push(el);});
+        j.elements.forEach(el=>{if(!el.id) el.id=genId(); state.elements.push(el); ensureImageLoaded(el);});
         saveBoards(true); render();
+        showSmartToast(`Imported ${j.elements.length} elements`, "📄");
       }
-    }catch(err){alert("Invalid JSON file");}
+    }catch(err){showSmartToast("Invalid whiteboard file", "⚠️");}
   };
   r.readAsText(file);
 }
@@ -2016,6 +2230,88 @@ async function handlePastedOrUploadedImages(fileList, originX, originY){
   const loadedList = [];
   for(const file of allFiles){
     if(!file) continue;
+
+    // Check if file is a Smart PNG with embedded canvas metadata
+    const isPng = file.type === "image/png" || /\.png$/i.test(file.name||"");
+    if(isPng){
+      let smartData = null;
+      try {
+        const engine = await getSmartPngEngine();
+        smartData = await engine.extractSmartPngMetadata(file);
+      } catch(e){
+        console.warn("Smart PNG extraction error:", e);
+      }
+
+      if(smartData && Array.isArray(smartData.elements) && smartData.elements.length > 0){
+        // Calculate bounding box of restored elements
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        smartData.elements.forEach(el => {
+          const b = getBounds(el);
+          minX = Math.min(minX, b.x);
+          minY = Math.min(minY, b.y);
+          maxX = Math.max(maxX, b.x + b.w);
+          maxY = Math.max(maxY, b.y + b.h);
+        });
+
+        const isCurrentCanvasEmpty = state.elements.length === 0;
+        let dx = 0, dy = 0;
+        if(!isCurrentCanvasEmpty && originX != null && originY != null && isFinite(minX)){
+          const centerX = (minX + maxX) / 2;
+          const centerY = (minY + maxY) / 2;
+          dx = Math.round(originX - centerX);
+          dy = Math.round(originY - centerY);
+        }
+
+        pushUndo();
+        const newIds = [];
+        const restoredEls = [];
+
+        smartData.elements.forEach(el => {
+          const clone = JSON.parse(JSON.stringify(el));
+          clone.id = genId();
+          newIds.push(clone.id);
+          if(dx !== 0 || dy !== 0){
+            if(clone.points && Array.isArray(clone.points)){
+              clone.points = clone.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
+            }
+            if(clone.x != null) clone.x += dx;
+            if(clone.y != null) clone.y += dy;
+          }
+          if(clone.type === "image" && clone.src){
+            const img = new Image();
+            img.onload = render;
+            img.src = clone.src;
+            clone.img = img;
+          }
+          restoredEls.push(clone);
+        });
+
+        if(isCurrentCanvasEmpty){
+          if(smartData.bgColor) state.bgColor = smartData.bgColor;
+          if(smartData.theme) applyTheme(smartData.theme);
+          if(smartData.gridStyle) state.gridStyle = smartData.gridStyle;
+          if(smartData.gridSpacing) state.gridSpacing = smartData.gridSpacing;
+          if(smartData.name){
+            const titleEl = document.getElementById("board-title");
+            if(titleEl) titleEl.value = smartData.name;
+            const curB = currentBoardRecord();
+            if(curB) curB.name = smartData.name;
+          }
+        }
+
+        state.elements.push(...restoredEls);
+        state.selectedIds = newIds;
+        state.selectedId = newIds.length === 1 ? newIds[0] : null;
+        setActiveTool("select", { keepSelection: true });
+        if(newIds.length === 1 && restoredEls[0]) showToolbar(restoredEls[0]);
+        else if(newIds.length > 1) showMultiToolbar();
+        saveBoards(true);
+        render();
+        showSmartToast(`✨ Smart PNG: ${restoredEls.length} editable elements restored!`, "✨");
+        continue;
+      }
+    }
+
     const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name||"");
     if(isPdf && typeof window.renderPdfToImages === "function"){
       try{
@@ -3478,13 +3774,14 @@ const _eraserModePartial = document.getElementById("eraser-mode-partial");
 if(_eraserModeWhole) _eraserModeWhole.onclick=()=>{state.eraserMode="whole"; if(_eraserModeWhole)_eraserModeWhole.className="flex-1 px-2 py-1.5 rounded-full bg-slate-900 text-white text-xs"; if(_eraserModePartial)_eraserModePartial.className="flex-1 px-2 py-1.5 rounded-full bg-slate-100 text-xs";};
 if(_eraserModePartial) _eraserModePartial.onclick=()=>{state.eraserMode="partial"; if(_eraserModeWhole)_eraserModeWhole.className="flex-1 px-2 py-1.5 rounded-full bg-slate-100 text-xs"; if(_eraserModePartial)_eraserModePartial.className="flex-1 px-2 py-1.5 rounded-full bg-slate-900 text-white text-xs";};
 const _exportPngBtn = document.getElementById("export-png-btn");
-if(_exportPngBtn) _exportPngBtn.onclick=()=>{
+if(_exportPngBtn) _exportPngBtn.onclick=async ()=>{
   let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
   state.elements.forEach(el=>{const b=getBounds(el);minX=Math.min(minX,b.x);minY=Math.min(minY,b.y);maxX=Math.max(maxX,b.x+b.w);maxY=Math.max(maxY,b.y+b.h);});
-  if(!isFinite(minX)){alert("Nothing to export");return;}
-  const pad=80; const dpr=window.devicePixelRatio||1; const w=Math.ceil(maxX-minX+pad*2), h=Math.ceil(maxY-minY+pad*2);
+  if(!isFinite(minX)){showSmartToast("Whiteboard is empty — draw something first!", "ℹ️");return;}
+  const pad=80; const dpr=Math.min(2, window.devicePixelRatio||1); const w=Math.ceil(maxX-minX+pad*2), h=Math.ceil(maxY-minY+pad*2);
   const exp=document.createElement("canvas"); exp.width=w*dpr; exp.height=h*dpr; const ec=exp.getContext("2d"); ec.scale(dpr,dpr);
   ec.fillStyle=state.bgColor||"#ffffff"; ec.fillRect(0,0,w,h); ec.translate(-minX+pad,-minY+pad);
+  
   function drawToCtx(el, c){
     c.save(); const b=getBounds(el), cx=b.x+b.w/2, cy=b.y+b.h/2; if(el.rotation){c.translate(cx,cy); c.rotate(el.rotation*Math.PI/180); c.translate(-cx,-cy);}
     c.strokeStyle=el.color||"#1E1E1E"; c.fillStyle=el.color||"#1E1E1E"; c.lineWidth=el.width||2; c.lineCap="round"; c.lineJoin="round";
@@ -3493,20 +3790,79 @@ if(_exportPngBtn) _exportPngBtn.onclick=()=>{
       drawSmoothStrokePath(c, el.points);
       c.globalAlpha = 1;
     }
-    else if(el.type==="rect") c.strokeRect(el.x,el.y,el.w,el.h);
-    else if(el.type==="roundRect"){ const r=Math.min(12,el.w/4,el.h/4); if(c.roundRect){c.beginPath(); c.roundRect(el.x,el.y,el.w,el.h,r); c.stroke();} else c.strokeRect(el.x,el.y,el.w,el.h); }
-    else if(["circle","ellipse"].includes(el.type)){ c.beginPath(); c.ellipse(el.x+el.w/2,el.y+el.h/2,Math.abs(el.w/2),Math.abs(el.h/2),0,0,Math.PI*2); c.stroke(); }
-    else if(el.type==="triangle"){ c.beginPath(); c.moveTo(el.x+el.w/2,el.y); c.lineTo(el.x,el.y+el.h); c.lineTo(el.x+el.w,el.y+el.h); c.closePath(); c.stroke(); }
-    else if(el.type==="diamond"){ c.beginPath(); c.moveTo(el.x+el.w/2,el.y); c.lineTo(el.x+el.w,el.y+el.h/2); c.lineTo(el.x+el.w/2,el.y+el.h); c.lineTo(el.x,el.y+el.h/2); c.closePath(); c.stroke(); }
-    else if(el.type==="sticky"){ c.fillStyle=el.bg||"#fef08a"; c.fillRect(el.x,el.y,el.w,el.h); c.fillStyle=el.color||"#422006"; c.font=`${el.size||16}px Segoe UI,Inter,sans-serif`; c.textBaseline="top"; (el.isPlaceholder?"":(el.text||"")).split("\n").forEach((ln,i)=>{c.fillText(ln,el.x+8,el.y+8+i*(el.size||16)*1.25)}); }
-    else if(LINE_TYPES.includes(el.type)){ if(el.type==="dashed") c.setLineDash([8,6]); c.beginPath(); c.moveTo(el.x,el.y); c.lineTo(el.x+el.w,el.y+el.h); c.stroke(); c.setLineDash([]); }
-    else if(el.type==="text"){ c.fillStyle=el.color||"#1E1E1E"; c.font=`${el.size||18}px Segoe UI,Inter,sans-serif`; c.textBaseline="top"; (el.isPlaceholder?"":(el.text||"")).split("\n").forEach((ln,i)=>{c.fillText(ln,el.x,el.y+i*(el.size||18)*1.25)}); }
+    else if(el.type==="rect"){ if(el.fill) c.fillRect(el.x,el.y,el.w,el.h); else c.strokeRect(el.x,el.y,el.w,el.h); }
+    else if(el.type==="roundRect"){ const r=Math.min(12,Math.abs(el.w)/4,Math.abs(el.h)/4); c.beginPath(); if(c.roundRect) c.roundRect(el.x,el.y,el.w,el.h,r); else c.rect(el.x,el.y,el.w,el.h); if(el.fill) c.fill(); else c.stroke(); }
+    else if(["circle","ellipse"].includes(el.type)){ c.beginPath(); c.ellipse(el.x+el.w/2,el.y+el.h/2,Math.abs(el.w/2),Math.abs(el.h/2),0,0,Math.PI*2); if(el.fill) c.fill(); else c.stroke(); }
+    else if(el.type==="triangle"){ c.beginPath(); c.moveTo(el.x+el.w/2,el.y); c.lineTo(el.x,el.y+el.h); c.lineTo(el.x+el.w,el.y+el.h); c.closePath(); if(el.fill) c.fill(); else c.stroke(); }
+    else if(el.type==="diamond"){ c.beginPath(); c.moveTo(el.x+el.w/2,el.y); c.lineTo(el.x+el.w,el.y+el.h/2); c.lineTo(el.x+el.w/2,el.y+el.h); c.lineTo(el.x,el.y+el.h/2); c.closePath(); if(el.fill) c.fill(); else c.stroke(); }
+    else if(el.type==="star"){ const r=Math.min(Math.abs(el.w),Math.abs(el.h))/2; drawStar(el.x+el.w/2,el.y+el.h/2,r,r*0.45,5); if(el.fill) c.fill(); else c.stroke(); }
+    else if(el.type==="hexagon"){ drawHexagon(el.x,el.y,el.w,el.h); if(el.fill) c.fill(); else c.stroke(); }
+    else if(el.type==="heart"){ drawHeart(el.x,el.y,el.w,el.h); if(el.fill) c.fill(); else c.stroke(); }
+    else if(el.type==="sticky"){
+      c.fillStyle=el.bg||"#fef08a"; roundRectPath(el.x,el.y,el.w,el.h,14); c.fill();
+      c.fillStyle=el.color||"#422006"; c.font=`${el.size||16}px Segoe UI,Inter,sans-serif`; c.textBaseline="top";
+      (el.isPlaceholder?"":(el.text||"")).split("\n").forEach((ln,i)=>{c.fillText(ln,el.x+12,el.y+12+i*(el.size||16)*1.35)});
+    }
+    else if(LINE_TYPES.includes(el.type)){
+      if(el.type==="dashed") c.setLineDash([8,6]);
+      c.beginPath(); c.moveTo(el.x,el.y); c.lineTo(el.x+el.w,el.y+el.h); c.stroke(); c.setLineDash([]);
+      if(el.type==="arrow"||el.type==="doubleArrow"){const a=Math.atan2(el.h,el.w),hl=14;c.beginPath();c.moveTo(el.x+el.w,el.y+el.h);c.lineTo(el.x+el.w-hl*Math.cos(a-Math.PI/6),el.y+el.h-hl*Math.sin(a-Math.PI/6));c.moveTo(el.x+el.w,el.y+el.h);c.lineTo(el.x+el.w-hl*Math.cos(a+Math.PI/6),el.y+el.h-hl*Math.sin(a+Math.PI/6));c.stroke();}
+      if(el.type==="doubleArrow"){const a=Math.atan2(el.h,el.w),hl=14;c.beginPath();c.moveTo(el.x,el.y);c.lineTo(el.x+hl*Math.cos(a-Math.PI/6),el.y+hl*Math.sin(a-Math.PI/6));c.moveTo(el.x,el.y);c.lineTo(el.x+hl*Math.cos(a+Math.PI/6),el.y+hl*Math.sin(a+Math.PI/6));c.stroke();}
+    }
+    else if(el.type==="text"){
+      c.fillStyle=el.color||"#1E1E1E"; c.font=`${el.bold?"bold ":""}${el.italic?"italic ":""}${el.size||18}px ${el.font||"Segoe UI,Inter,sans-serif"}`; c.textBaseline="top";
+      (el.isPlaceholder?"":(el.text||"")).split("\n").forEach((ln,i)=>{c.fillText(ln,el.x,el.y+i*(el.size||18)*1.25)});
+    }
     else if(el.type==="image"&&el.img&&el.img.complete) c.drawImage(el.img,el.x,el.y,el.w,el.h);
     else if(el.type==="emoji"){ c.font=`${el.w||32}px sans-serif`; c.textBaseline="top"; c.fillText(el.text,el.x,el.y); }
     c.restore();
   }
+
   state.elements.forEach(el=>drawToCtx(el,ec));
-  const a=document.createElement("a"); const bTitle=document.getElementById("board-title"); a.download=((bTitle&&bTitle.value)||"whiteboard").toLowerCase().replace(/\s+/g,"-")+".png"; a.href=exp.toDataURL("image/png"); a.click();
+  const bTitle=document.getElementById("board-title");
+  const rawTitle=((bTitle&&bTitle.value)||"whiteboard").trim();
+  const filename=rawTitle.toLowerCase().replace(/\s+/g,"-")+".png";
+
+  exp.toBlob(async (blob) => {
+    if(!blob) return;
+    try {
+      const curB = currentBoardRecord() || {};
+      const payload = {
+        name: rawTitle,
+        elements: (state.elements||[]).map(el => {
+          const { img, _handles, _fadeInterval, fireStarted, _fresh, ...clean } = el;
+          if(clean.type === "vanishing") return { ...clean, opacity: 1 };
+          return clean;
+        }),
+        bgColor: state.bgColor,
+        theme: state.theme,
+        gridStyle: state.gridStyle,
+        gridSpacing: state.gridSpacing,
+        camera: state.camera,
+        ...curB,
+      };
+
+      const engine = await getSmartPngEngine();
+      const smartBlob = await engine.embedSmartPngMetadata(blob, payload);
+      const url = URL.createObjectURL(smartBlob);
+      const a = document.createElement("a");
+      a.download = filename;
+      a.href = url;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showSmartToast("✨ Smart PNG Exported with editable canvas data!", "💾");
+    } catch(err){
+      console.warn("Smart PNG export fallback:", err);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.download = filename;
+      a.href = url;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  }, "image/png");
 };
 const _undoBtn = document.getElementById("undo-btn");
 if(_undoBtn) _undoBtn.onclick=undo;

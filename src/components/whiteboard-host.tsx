@@ -2,6 +2,11 @@ import { useEffect } from "react";
 import markup from "../whiteboard-markup.html?raw";
 import { getBoard, getWorkspaceBoardPayload, type BoardRecord } from "@/lib/boards-db";
 import { renderPdfToImages } from "@/lib/pdf-importer";
+import {
+  embedSmartPngMetadata,
+  extractSmartPngMetadata,
+  isSmartPngFile,
+} from "@/lib/smart-png";
 
 function loadScript(src: string) {
   return new Promise<void>((resolve, reject) => {
@@ -33,6 +38,11 @@ type HbiboWindow = {
   }) => void;
   __hbiboDestroy?: () => void;
   renderPdfToImages?: typeof renderPdfToImages;
+  SmartPNG?: {
+    embedSmartPngMetadata: typeof embedSmartPngMetadata;
+    extractSmartPngMetadata: typeof extractSmartPngMetadata;
+    isSmartPngFile: typeof isSmartPngFile;
+  };
 };
 
 export function WhiteboardHost({
@@ -45,8 +55,14 @@ export function WhiteboardHost({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // Expose PDF importer for whiteboard canvas upload and drop
-      (window as unknown as HbiboWindow).renderPdfToImages = renderPdfToImages;
+      // Expose PDF importer and Smart PNG engine for whiteboard canvas
+      const win = window as unknown as HbiboWindow;
+      win.renderPdfToImages = renderPdfToImages;
+      win.SmartPNG = {
+        embedSmartPngMetadata,
+        extractSmartPngMetadata,
+        isSmartPngFile,
+      };
 
       let initialBoard: BoardRecord | null = getWorkspaceBoardPayload(boardId);
       if (!initialBoard) {

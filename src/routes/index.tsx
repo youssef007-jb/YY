@@ -34,6 +34,7 @@ import {
 } from "@/lib/boards-db";
 import { renderPdfToImages } from "@/lib/pdf-importer";
 import { generateBoardThumbnail } from "@/lib/thumbnail-generator";
+import { embedSmartPngMetadata, extractSmartPngMetadata } from "@/lib/smart-png";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -777,16 +778,28 @@ function HomePage() {
       const rawName = (b.name || "Untitled").trim();
       const filename = `${rawName}.png`;
       
-      canvas.toBlob((blob) => {
+      canvas.toBlob(async (blob) => {
         if (!blob) return;
-        const url = URL.createObjectURL(blob);
-        const downloadAnchor = document.createElement("a");
-        downloadAnchor.setAttribute("href", url);
-        downloadAnchor.setAttribute("download", filename);
-        document.body.appendChild(downloadAnchor);
-        downloadAnchor.click();
-        downloadAnchor.remove();
-        URL.revokeObjectURL(url);
+        try {
+          const smartBlob = await embedSmartPngMetadata(blob, b);
+          const url = URL.createObjectURL(smartBlob);
+          const downloadAnchor = document.createElement("a");
+          downloadAnchor.setAttribute("href", url);
+          downloadAnchor.setAttribute("download", filename);
+          document.body.appendChild(downloadAnchor);
+          downloadAnchor.click();
+          downloadAnchor.remove();
+          URL.revokeObjectURL(url);
+        } catch {
+          const url = URL.createObjectURL(blob);
+          const downloadAnchor = document.createElement("a");
+          downloadAnchor.setAttribute("href", url);
+          downloadAnchor.setAttribute("download", filename);
+          document.body.appendChild(downloadAnchor);
+          downloadAnchor.click();
+          downloadAnchor.remove();
+          URL.revokeObjectURL(url);
+        }
       }, "image/png");
     } catch {
       setError("Could not export board to PNG.");
@@ -814,6 +827,30 @@ function HomePage() {
       for (const file of files) {
         if (isImageFile(file) && !isPdf(file)) {
           try {
+            // Check if it's a Smart PNG with embedded canvas metadata
+            const smartData = await extractSmartPngMetadata(file);
+            if (smartData && Array.isArray(smartData.elements) && smartData.elements.length > 0) {
+              const cleanName = smartData.name || file.name.replace(/\.[^/.]+$/, "") || "Whiteboard";
+              fileEntries.push({
+                fileName: file.name,
+                boardTitle: cleanName,
+                items: [],
+                jsonBoard: {
+                  id: genBoardId(),
+                  name: cleanName,
+                  createdAt: Date.now(),
+                  updatedAt: Date.now(),
+                  elements: smartData.elements,
+                  bgColor: smartData.bgColor || "#ffffff",
+                  theme: smartData.theme || "classlight",
+                  gridStyle: smartData.gridStyle || "none",
+                  gridSpacing: smartData.gridSpacing || 24,
+                  camera: smartData.camera || { x: 0, y: 0, zoom: 1 },
+                },
+              });
+              continue;
+            }
+
             const dataUrl = await new Promise<string>((resolve, reject) => {
               const reader = new FileReader();
               reader.onload = () => resolve(reader.result as string);
