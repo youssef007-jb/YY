@@ -846,6 +846,9 @@ function HomePage() {
                   gridStyle: smartData.gridStyle || "none",
                   gridSpacing: smartData.gridSpacing || 24,
                   camera: smartData.camera || { x: 0, y: 0, zoom: 1 },
+                  toolbarPos: smartData.toolbarPos || "left",
+                  stickyAutoEdit: smartData.stickyAutoEdit ?? false,
+                  thumb: smartData.thumb ?? null,
                 },
               });
               continue;

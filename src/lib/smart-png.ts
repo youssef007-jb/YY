@@ -123,7 +123,7 @@ export async function embedSmartPngMetadata(
 
   if (!isPngBuffer(sourceBytes)) {
     // If not a valid PNG, return original blob or wrap as image/png
-    return new Blob([sourceBytes], { type: "image/png" });
+    return new Blob([sourceBytes.slice().buffer as ArrayBuffer], { type: "image/png" });
   }
 
   // Build clean payload without circular references or ephemeral runtime DOM properties
