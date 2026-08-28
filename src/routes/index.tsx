@@ -40,6 +40,7 @@ import {
 import { renderPdfToImages } from "@/lib/pdf-importer";
 import { generateBoardThumbnail } from "@/lib/thumbnail-generator";
 import { embedSmartPngMetadata, extractSmartPngMetadata } from "@/lib/smart-png";
+import { stripFileExtension, buildDownloadFilename } from "@/lib/filename-utils";
 import {
   BatchConversionQueue,
   type BatchProgressState,
@@ -788,8 +789,7 @@ function HomePage() {
         ctx.restore();
       }
       
-      const rawName = (b.name || "Untitled").trim();
-      const filename = `${rawName}.png`;
+      const filename = buildDownloadFilename(b.name, "png");
       
       canvas.toBlob(async (blob) => {
         if (!blob) return;
@@ -843,7 +843,7 @@ function HomePage() {
             // Check if it's a Smart PNG with embedded canvas metadata
             const smartData = await extractSmartPngMetadata(file);
             if (smartData && Array.isArray(smartData.elements) && smartData.elements.length > 0) {
-              const cleanName = smartData.name || file.name.replace(/\.[^/.]+$/, "") || "Whiteboard";
+              const cleanName = smartData.name || stripFileExtension(file.name) || file.name || "Whiteboard";
               fileEntries.push({
                 fileName: file.name,
                 boardTitle: cleanName,
@@ -895,7 +895,7 @@ function HomePage() {
               img.src = dataUrl;
             });
 
-            const cleanName = file.name.replace(/\.[^/.]+$/, "") || "Image";
+            const cleanName = stripFileExtension(file.name) || file.name || "Image";
             fileEntries.push({
               fileName: file.name,
               boardTitle: cleanName,
@@ -907,7 +907,7 @@ function HomePage() {
         } else if (isPdf(file)) {
           try {
             const pages = await renderPdfToImages(file);
-            const cleanName = file.name.replace(/\.pdf$/i, "") || "PDF Document";
+            const cleanName = stripFileExtension(file.name) || file.name || "PDF Document";
             if (pages.length > 0) {
               fileEntries.push({
                 fileName: file.name,
@@ -924,7 +924,7 @@ function HomePage() {
             const raw = JSON.parse(text);
             const items: BoardRecord[] = Array.isArray(raw) ? raw : [raw];
             for (const item of items) {
-              const boardName = item.name || file.name.replace(/\.json$/i, "") || "Untitled";
+              const boardName = item.name || stripFileExtension(file.name) || file.name || "Untitled";
               fileEntries.push({
                 fileName: file.name,
                 boardTitle: boardName,
@@ -1055,6 +1055,8 @@ function HomePage() {
     if (!uploadPrompt || !uploadPrompt.rawFiles || uploadPrompt.rawFiles.length === 0) return;
     const rawFiles = uploadPrompt.rawFiles;
     setUploadPrompt(null);
+    setSearch("");
+    setPhaseFilter(ALL_PHASES_VALUE);
 
     const queue = new BatchConversionQueue(rawFiles, {
       concurrency: 3,
@@ -1089,6 +1091,11 @@ function HomePage() {
     queueRef.current?.retryAllFailed();
   };
 
+  const handleFallbackToImage = async (itemId: string) => {
+    await queueRef.current?.fallbackToImage(itemId);
+    await refresh();
+  };
+
   const handleCancelBatch = () => {
     queueRef.current?.cancel();
   };
@@ -1102,8 +1109,18 @@ function HomePage() {
     const { combinedBoard } = uploadPrompt;
     setUploadPrompt(null);
     try {
+      if (!combinedBoard.thumb && combinedBoard.elements && combinedBoard.elements.length > 0) {
+        try {
+          combinedBoard.thumb = await generateBoardThumbnail(combinedBoard);
+        } catch {
+          /* ignore */
+        }
+      }
       await putBoard(combinedBoard);
-      await refresh();
+      const updatedList = await listBoards();
+      setBoards(updatedList);
+      setSearch("");
+      setPhaseFilter(ALL_PHASES_VALUE);
       openBoard(combinedBoard.id, combinedBoard);
     } catch {
       setError("Could not save the whiteboard.");
@@ -1116,9 +1133,19 @@ function HomePage() {
     setUploadPrompt(null);
     try {
       for (const board of separateBoards) {
+        if (!board.thumb && board.elements && board.elements.length > 0) {
+          try {
+            board.thumb = await generateBoardThumbnail(board);
+          } catch {
+            /* ignore */
+          }
+        }
         await putBoard(board);
       }
-      await refresh();
+      const updatedList = await listBoards();
+      setBoards(updatedList);
+      setSearch("");
+      setPhaseFilter(ALL_PHASES_VALUE);
     } catch {
       setError("Could not save the whiteboard(s).");
     }
@@ -1658,7 +1685,7 @@ function HomePage() {
 
       {/* Upload Open Prompt Dialog */}
       <Dialog open={!!uploadPrompt} onOpenChange={(open) => !open && handleBackToHomepage()}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg p-6">
           <DialogHeader>
             <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <Upload className="h-5 w-5" />
@@ -1670,35 +1697,46 @@ function HomePage() {
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
               {uploadPrompt?.fileCount === 1
-                ? `"${uploadPrompt.separateBoards[0]?.name}" is ready. Convert it into editable whiteboard elements, or open it now.`
+                ? `"${uploadPrompt.separateBoards[0]?.name}" is ready. Convert it into editable whiteboard elements, open it immediately, or save it to your homepage.`
                 : `Choose "Convert all" to reconstruct each file into a separate editable whiteboard, "Open all in 1 whiteboard" to combine them, or "Back to homepage" to save image boards.`}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="mt-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => void handleBackToHomepage()}
-              className="rounded-xl text-xs font-medium"
-            >
-              Back to homepage
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => void handleOpenCombined()}
-              className="rounded-xl text-xs font-medium"
-            >
-              {uploadPrompt?.fileCount === 1 ? "Open now" : "Open all in 1 whiteboard"}
-            </Button>
-            <Button
-              onClick={handleConvertAll}
-              className="rounded-xl text-xs font-semibold gap-1.5 shadow-sm"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              {uploadPrompt?.fileCount === 1
-                ? "Convert to Whiteboard"
-                : `Convert all (${uploadPrompt?.fileCount || 0} boards)`}
-            </Button>
-          </DialogFooter>
+
+          <div className="mt-4 pt-3 border-t border-border/50">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handleBackToHomepage()}
+                className="w-full rounded-xl text-xs font-medium h-9 px-2.5 truncate"
+                title="Back to homepage"
+              >
+                Back to homepage
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void handleOpenCombined()}
+                className="w-full rounded-xl text-xs font-medium h-9 px-2.5 truncate"
+                title={uploadPrompt?.fileCount === 1 ? "Open now" : "Open all in 1 whiteboard"}
+              >
+                {uploadPrompt?.fileCount === 1 ? "Open now" : "Open all in 1 board"}
+              </Button>
+              <Button
+                type="button"
+                onClick={handleConvertAll}
+                className="w-full rounded-xl text-xs font-semibold gap-1.5 h-9 px-2.5 truncate shadow-sm bg-primary text-primary-foreground hover:bg-primary/90"
+                title={uploadPrompt?.fileCount === 1 ? "Convert to Whiteboard" : `Convert all (${uploadPrompt?.fileCount || 0})`}
+              >
+                <Sparkles className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">
+                  {uploadPrompt?.fileCount === 1
+                    ? "Convert to Whiteboard"
+                    : `Convert all (${uploadPrompt?.fileCount || 0})`}
+                </span>
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -1706,15 +1744,21 @@ function HomePage() {
       {batchProgress && (
         <aside
           aria-label="Batch conversion progress"
-          className="fixed bottom-6 right-6 z-50 max-w-sm w-[calc(100vw-3rem)] pointer-events-auto animate-in fade-in slide-in-from-bottom-5 duration-200"
+          className="fixed bottom-6 right-6 z-50 max-w-md w-[calc(100vw-3rem)] pointer-events-auto animate-in fade-in slide-in-from-bottom-5 duration-200"
         >
           <div className="rounded-2xl border border-border/80 bg-background/95 p-3.5 shadow-2xl backdrop-blur-md space-y-2.5">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 {batchProgress.isFinished ? (
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                    <CheckCircle2 className="h-4 w-4" />
-                  </div>
+                  batchProgress.failed > 0 ? (
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                      <AlertTriangle className="h-4 w-4" />
+                    </div>
+                  ) : (
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                      <CheckCircle2 className="h-4 w-4" />
+                    </div>
+                  )
                 ) : (
                   <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -1723,13 +1767,15 @@ function HomePage() {
                 <div className="min-w-0">
                   <h4 className="text-xs font-bold text-foreground truncate">
                     {batchProgress.isFinished
-                      ? `Conversion Complete (${batchProgress.completed} of ${batchProgress.total})`
+                      ? batchProgress.failed > 0
+                        ? `Conversion Completed with Issues (${batchProgress.completed}/${batchProgress.total})`
+                        : `Conversion Complete (${batchProgress.completed} of ${batchProgress.total})`
                       : `Converting Whiteboards (${batchProgress.completed + batchProgress.failed} / ${batchProgress.total})`}
                   </h4>
                   <p className="text-[11px] text-muted-foreground truncate">
                     {batchProgress.isFinished
                       ? batchProgress.failed > 0
-                        ? `${batchProgress.completed} created, ${batchProgress.failed} saved as image`
+                        ? `${batchProgress.completed} converted, ${batchProgress.failed} failed. Click retry to re-attempt.`
                         : "All whiteboards ready and editable"
                       : `${batchProgress.processing} in progress, ${batchProgress.pending} queued`}
                   </p>
@@ -1737,6 +1783,18 @@ function HomePage() {
               </div>
 
               <div className="flex items-center gap-1">
+                {batchProgress.failed > 0 && !batchProgress.processing && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRetryAllFailed}
+                    className="h-7 px-2 rounded-lg text-[10px] font-semibold gap-1"
+                    title="Retry all failed conversions"
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    <span>Retry All</span>
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -1774,7 +1832,11 @@ function HomePage() {
               <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
                 <div
                   className={`h-full transition-all duration-300 ${
-                    batchProgress.isFinished ? "bg-emerald-500" : "bg-primary"
+                    batchProgress.isFinished
+                      ? batchProgress.failed > 0
+                        ? "bg-amber-500"
+                        : "bg-emerald-500"
+                      : "bg-primary"
                   }`}
                   style={{ width: `${batchProgress.percent}%` }}
                 />
@@ -1783,32 +1845,62 @@ function HomePage() {
 
             {/* Collapsible item list */}
             {batchExpanded && (
-              <div className="max-h-48 overflow-y-auto space-y-1.5 pt-1 pr-1 text-[11px] border-t border-border/50">
+              <div className="max-h-52 overflow-y-auto space-y-2 pt-1 pr-1 text-[11px] border-t border-border/50">
                 {batchProgress.items.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between gap-2 py-0.5">
-                    <span className="truncate max-w-[190px] font-medium text-foreground">
-                      {item.fileName}
-                    </span>
-                    <span className="shrink-0 flex items-center gap-1 text-[10px]">
-                      {item.status === "completed" && (
-                        <span className="text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
-                          <Check className="h-3 w-3" /> Done
+                  <div key={item.id} className="flex flex-col gap-1 rounded-lg bg-muted/40 p-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate max-w-[200px] font-medium text-foreground">
+                        {item.fileName}
+                      </span>
+                      <span className="shrink-0 flex items-center gap-1 text-[10px]">
+                        {item.status === "completed" && (
+                          <span className="text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                            <Check className="h-3 w-3" /> Done
+                          </span>
+                        )}
+                        {item.status === "processing" && (
+                          <span className="text-primary font-medium flex items-center gap-1">
+                            <Loader2 className="h-3 w-3 animate-spin" /> {item.statusText || "Converting"}
+                          </span>
+                        )}
+                        {item.status === "pending" && (
+                          <span className="text-muted-foreground">Queued</span>
+                        )}
+                        {item.status === "failed" && (
+                          <span className="text-destructive font-medium">
+                            Failed
+                          </span>
+                        )}
+                      </span>
+                    </div>
+
+                    {item.status === "failed" && (
+                      <div className="flex items-center justify-between gap-2 pt-0.5 border-t border-border/40">
+                        <span className="text-[10px] text-destructive truncate max-w-[170px]" title={item.error}>
+                          {item.error || "Conversion failed"}
                         </span>
-                      )}
-                      {item.status === "processing" && (
-                        <span className="text-primary font-medium flex items-center gap-1">
-                          <Loader2 className="h-3 w-3 animate-spin" /> {item.statusText || "Converting"}
-                        </span>
-                      )}
-                      {item.status === "pending" && (
-                        <span className="text-muted-foreground">Queued</span>
-                      )}
-                      {item.status === "failed" && (
-                        <span className="text-amber-600 dark:text-amber-400">
-                          Saved as image
-                        </span>
-                      )}
-                    </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRetryItem(item.id)}
+                            className="h-6 px-1.5 text-[10px] rounded-md gap-1"
+                          >
+                            <RotateCcw className="h-2.5 w-2.5" />
+                            Retry
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => void handleFallbackToImage(item.id)}
+                            className="h-6 px-1.5 text-[10px] rounded-md"
+                            title="Save as image whiteboard"
+                          >
+                            Save as image
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

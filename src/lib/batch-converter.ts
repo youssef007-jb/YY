@@ -26,6 +26,7 @@ import {
 import { extractSmartPngMetadata } from "./smart-png";
 import { renderPdfToImages } from "./pdf-importer";
 import { generateBoardThumbnail } from "./thumbnail-generator";
+import { stripFileExtension } from "./filename-utils";
 
 export interface BatchItem {
   id: string;
@@ -81,7 +82,7 @@ export class BatchConversionQueue {
     this.onAllFinished = options.onAllFinished;
 
     this.items = files.map((file, idx) => {
-      const cleanTitle = file.name.replace(/\.[^/.]+$/, "") || `Whiteboard ${idx + 1}`;
+      const cleanTitle = stripFileExtension(file.name) || file.name || `Whiteboard ${idx + 1}`;
       return {
         id: `batch-${idx}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         file,
@@ -180,6 +181,107 @@ export class BatchConversionQueue {
       this.activeCount--;
       this.emitProgress();
     }
+  }
+
+  public async fallbackToImage(itemId: string): Promise<BoardRecord | null> {
+    const item = this.items.find((i) => i.id === itemId);
+    if (!item) return null;
+    item.status = "processing";
+    item.statusText = "Saving as image whiteboard...";
+    item.error = undefined;
+    this.emitProgress();
+
+    try {
+      const board = await this.createImageBoard(item);
+      item.status = "completed";
+      item.statusText = "Saved as image";
+      item.board = board;
+      this.completedBoards.push(board);
+      this.onItemCompleted?.(board, item);
+      return board;
+    } catch (err: any) {
+      console.warn(`[BatchQueue] Failed to save ${item.fileName} as image:`, err);
+      item.status = "failed";
+      item.error = err?.message || "Failed to save image";
+      item.statusText = "Failed";
+      this.onItemFailed?.(item.error || "Failed to save image", item);
+      return null;
+    } finally {
+      this.emitProgress();
+      if (this.activeCount === 0 && !this.items.some((i) => i.status === "processing" || i.status === "pending")) {
+        const state = this.getProgress();
+        this.onAllFinished?.(this.completedBoards, state);
+      }
+    }
+  }
+
+  private async createImageBoard(item: BatchItem): Promise<BoardRecord> {
+    const file = item.file;
+    const baseTime = Date.now();
+    const cleanTitle = item.boardTitle;
+    const cat = autoExtractPhaseAndWeek(cleanTitle);
+
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error("Failed to read image file"));
+      reader.readAsDataURL(file);
+    });
+
+    const imgDim = await new Promise<{ w: number; h: number }>((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const maxDim = 800;
+        let w = img.naturalWidth || img.width || 600;
+        let h = img.naturalHeight || img.height || 450;
+        if (w > maxDim || h > maxDim) {
+          if (w >= h) {
+            h = Math.round((h / w) * maxDim);
+            w = maxDim;
+          } else {
+            w = Math.round((w / h) * maxDim);
+            h = maxDim;
+          }
+        }
+        resolve({ w, h });
+      };
+      img.onerror = () => resolve({ w: 600, h: 450 });
+      img.src = dataUrl;
+    });
+
+    const newBoard: BoardRecord = {
+      ...blankBoard(cleanTitle),
+      id: genBoardId(),
+      name: cleanTitle,
+      phase: cat.phase,
+      week: cat.week,
+      phase_category: cat.phase_category,
+      week_category: cat.week_category,
+      createdAt: baseTime,
+      updatedAt: baseTime,
+      elements: [
+        {
+          id: genBoardId(),
+          type: "image",
+          src: dataUrl,
+          x: -Math.round(imgDim.w / 2),
+          y: -Math.round(imgDim.h / 2),
+          w: imgDim.w,
+          h: imgDim.h,
+          rotation: 0,
+        },
+      ],
+      camera: { x: 0, y: 0, zoom: 1 },
+    };
+
+    try {
+      newBoard.thumb = await generateBoardThumbnail(newBoard);
+    } catch {
+      /* ignore */
+    }
+
+    await putBoard(newBoard);
+    return newBoard;
   }
 
   public getProgress(): BatchProgressState {
@@ -400,10 +502,6 @@ export class BatchConversionQueue {
       }
     );
 
-    if (aiResult.title && aiResult.title.trim()) {
-      detectedTitle = aiResult.title.trim();
-    }
-
     const reconstructed = reconstructWhiteboardElements(aiResult, prepared.originalImg, {
       targetCenter: { x: 0, y: 0 },
     });
@@ -414,8 +512,8 @@ export class BatchConversionQueue {
       y: reconstructed.bounds.y + reconstructed.bounds.height / 2,
     };
 
-    // Assemble Native YY Whiteboard Record
-    const boardTitle = detectedTitle || item.boardTitle;
+    // Assemble Native YY Whiteboard Record strictly preserving the uploaded filename
+    const boardTitle = item.boardTitle;
     const cat = autoExtractPhaseAndWeek(boardTitle);
     const newBoard: BoardRecord = {
       ...blankBoard(boardTitle),

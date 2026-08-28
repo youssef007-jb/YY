@@ -113,7 +113,32 @@
     return b;
   }
 
+  function getCreationDefaults() {
+    try {
+      const raw = localStorage.getItem("hbibo_whiteboard_creation_defaults");
+      if (raw) {
+        const p = JSON.parse(raw);
+        let grid = "none";
+        if (p.gridStyle === "dots" || p.gridStyle === "dot-grid" || p.gridStyle === "grid-dots") grid = "dot-grid";
+        else if (p.gridStyle === "lines" || p.gridStyle === "line-grid" || p.gridStyle === "grid-lines") grid = "line-grid";
+        
+        let pos = "bottom";
+        if (p.toolbarPos === "top" || p.toolbarPos === "left" || p.toolbarPos === "right" || p.toolbarPos === "bottom") {
+          pos = p.toolbarPos;
+        }
+        
+        return {
+          gridStyle: grid,
+          bgColor: typeof p.bgColor === "string" && p.bgColor.trim() ? p.bgColor.trim() : "#ffffff",
+          toolbarPos: pos
+        };
+      }
+    } catch (e) {}
+    return { gridStyle: "none", bgColor: "#ffffff", toolbarPos: "bottom" };
+  }
+
   function blankBoard(name) {
+    const defaults = getCreationDefaults();
     const now = Date.now();
     const title = name || "Untitled";
     const cats = extractPhaseAndWeekCategories(title);
@@ -124,11 +149,11 @@
       updatedAt: now,
       elements: [],
       camera: { x: 0, y: 0, zoom: 1 },
-      gridStyle: "none",
+      gridStyle: defaults.gridStyle,
       gridSpacing: 24,
-      bgColor: "#ffffff",
+      bgColor: defaults.bgColor,
       theme: "classlight",
-      toolbarPos: "bottom",
+      toolbarPos: defaults.toolbarPos,
       stickyAutoEdit: false,
       thumb: null,
       phase: cats.phase,

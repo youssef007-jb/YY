@@ -142,9 +142,11 @@ export function autoExtractPhaseAndWeek(name: string): {
   return extractPhaseAndWeekCategories(name);
 }
 
+import { getWhiteboardCreationDefaults } from "./board-defaults";
+
 export function normalizeBoard(b: BoardRecord): BoardRecord {
   if (!b) return b;
-  const title = (b.name && typeof b.name === "string" && b.name.trim()) ? b.name.trim() : "Untitled";
+  const title = (b.name && typeof b.name === "string" && b.name.length > 0) ? b.name : (b.name || "Untitled");
   b.name = title;
   
   // Extract elements directly or from legacy layers if present
@@ -167,6 +169,7 @@ export function normalizeBoard(b: BoardRecord): BoardRecord {
 }
 
 export function blankBoard(name?: string): BoardRecord {
+  const defaults = getWhiteboardCreationDefaults();
   const now = Date.now();
   const title = name || "Untitled";
   const cat = autoExtractPhaseAndWeek(title);
@@ -177,11 +180,11 @@ export function blankBoard(name?: string): BoardRecord {
     updatedAt: now,
     elements: [],
     camera: { x: 0, y: 0, zoom: 1 },
-    gridStyle: "none",
+    gridStyle: defaults.gridStyle,
     gridSpacing: 24,
-    bgColor: "#ffffff",
+    bgColor: defaults.bgColor,
     theme: "classlight",
-    toolbarPos: "bottom",
+    toolbarPos: defaults.toolbarPos,
     stickyAutoEdit: false,
     thumb: null,
     phase: cat.phase,
@@ -262,7 +265,7 @@ export async function duplicateBoard(id: string): Promise<BoardRecord | null> {
 export async function renameBoard(id: string, name: string): Promise<BoardRecord | null> {
   const b = await getBoard(id);
   if (!b) return null;
-  const newName = name.trim() || "Untitled";
+  const newName = (name && name.length > 0) ? name : "Untitled";
   b.name = newName;
   b.updatedAt = Date.now();
   const cat = autoExtractPhaseAndWeek(newName);

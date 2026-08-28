@@ -632,8 +632,15 @@ function exportAllLayers(){
   const blob=new Blob([data],{type:"application/json"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
-  a.download=(b.name||"whiteboard").replace(/\s+/g,"-")+".json";
+  a.download=(b.name || "whiteboard") + ".json";
+  document.body.appendChild(a);
   a.click();
+  a.remove();
+  URL.revokeObjectURL(a.href);
+}
+
+function exportLayer(id){
+  exportAllLayers();
 }
 
 async function importBoardsFile(file){
@@ -721,17 +728,37 @@ function applyToolbarPos(pos){
   document.querySelectorAll(".pos-btn").forEach(b=>{b.classList.toggle("bg-slate-900",b.dataset.pos===pos); b.classList.toggle("text-white",b.dataset.pos===pos); b.classList.toggle("bg-slate-100",b.dataset.pos!==pos)});
   saveBoards();
 }
+function normalizeGridStyle(g){
+  if(g==="dots" || g==="dot-grid" || g==="grid-dots") return "dot-grid";
+  if(g==="lines" || g==="line-grid" || g==="grid-lines") return "line-grid";
+  return "bg-white";
+}
 function syncGridButtons(g){
+  const norm=normalizeGridStyle(g);
   const map={"dot-grid":"grid-dots","line-grid":"grid-lines","bg-white":"grid-none"};
   ["grid-dots","grid-lines","grid-none"].forEach(id=>{
     const b=document.getElementById(id); if(!b) return;
-    const on=map[g]===id;
+    const on=map[norm]===id;
     b.classList.toggle("bg-slate-900",on);
     b.classList.toggle("text-white",on);
     b.classList.toggle("bg-slate-100",!on);
   });
 }
-function applyGridStyle(g){container.classList.remove("dot-grid","line-grid","bg-white"); container.classList.add("absolute","inset-0"); if(g==="bg-white"){container.classList.add("bg-white"); container.style.backgroundImage="none";} else {container.classList.add(g); container.style.backgroundImage="";} syncGridButtons(g); updateGrid(); saveBoards();}
+function applyGridStyle(g){
+  const norm=normalizeGridStyle(g);
+  container.classList.remove("dot-grid","line-grid","bg-white");
+  container.classList.add("absolute","inset-0");
+  if(norm==="bg-white"){
+    container.classList.add("bg-white");
+    container.style.backgroundImage="none";
+  } else {
+    container.classList.add(norm);
+    container.style.backgroundImage="";
+  }
+  syncGridButtons(norm);
+  updateGrid();
+  saveBoards();
+}
 function isDarkColor(c){
   if(!c||typeof c!=="string") return false;
   const h=c.trim().replace("#","");
@@ -4200,8 +4227,8 @@ if(_exportPngBtn) _exportPngBtn.onclick=async ()=>{
 
   state.elements.forEach(el=>drawToCtx(el,ec));
   const bTitle=document.getElementById("board-title");
-  const rawTitle=((bTitle&&bTitle.value)||"whiteboard").trim();
-  const filename=rawTitle.toLowerCase().replace(/\s+/g,"-")+".png";
+  const rawTitle=((bTitle&&bTitle.value)||"whiteboard");
+  const filename=`${rawTitle}.png`;
 
   exp.toBlob(async (blob) => {
     if(!blob) return;
@@ -4239,7 +4266,9 @@ if(_exportPngBtn) _exportPngBtn.onclick=async ()=>{
       const a = document.createElement("a");
       a.download = filename;
       a.href = url;
+      document.body.appendChild(a);
       a.click();
+      a.remove();
       URL.revokeObjectURL(url);
     }
   }, "image/png");

@@ -1,3 +1,5 @@
+import { stripFileExtension } from "./filename-utils";
+
 export type RenderedPage = {
   name: string;
   src: string;
@@ -33,7 +35,7 @@ export async function renderPdfToImages(file: File | Blob): Promise<RenderedPage
     const numPages = pdf.numPages;
     const results: RenderedPage[] = [];
 
-    const fileName = (file instanceof File ? file.name : "PDF Document").replace(/\.[^/.]+$/, "");
+    const fileName = file instanceof File ? (stripFileExtension(file.name) || file.name) : "PDF Document";
 
     for (let pageNum = 1; pageNum <= numPages; pageNum++) {
       const page = await pdf.getPage(pageNum);
