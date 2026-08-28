@@ -176,13 +176,19 @@ function applyBoardRecord(cur){
     if(el.opacity==null) el.opacity=1;
   });
 
-  const _cam=cur.camera||{x:0,y:0,zoom:1};
-  if(cur.camera && (cur.camera.x !== 0 || cur.camera.y !== 0 || (cur.camera.zoom && cur.camera.zoom !== 1))){
-    state.camera={zoom:cur.camera.zoom||1, x:cur.camera.x, y:cur.camera.y};
+  const isNewConverted = cur.needsFitToScreen === true || cur.fitToScreenOnOpen === true;
+  if(isNewConverted && state.elements.length > 0){
+    fitToScreen(false);
+    cur.needsFitToScreen = false;
+    cur.fitToScreenOnOpen = false;
+    cur.camera = { ...state.camera };
+    if(Store && Store.putBoard) Store.putBoard(cur).catch(e=>console.warn(e));
+  } else if(cur.camera && typeof cur.camera.zoom === "number" && typeof cur.camera.x === "number" && typeof cur.camera.y === "number"){
+    state.camera = { zoom: cur.camera.zoom || 1, x: cur.camera.x, y: cur.camera.y };
   } else if(state.elements.length > 0){
     fitToScreen(false);
   } else {
-    state.camera={zoom:1, x:innerWidth/2, y:innerHeight/2};
+    state.camera = { zoom: 1, x: innerWidth / 2, y: innerHeight / 2 };
   }
   state.fireParticles=[];
   const titleEl=document.getElementById("board-title");
@@ -823,31 +829,44 @@ function cinematicGlide(target, duration=420){
 
 function fitToScreen(animate=true){
   const els=state.elements;
+  const vw = window.innerWidth || document.documentElement.clientWidth || 1024;
+  const vh = window.innerHeight || document.documentElement.clientHeight || 768;
+
   if(!els || els.length===0){
-    if(animate) cinematicGlide({x:innerWidth/2, y:innerHeight/2, zoom:1});
-    else { state.camera={x:innerWidth/2, y:innerHeight/2, zoom:1}; updateGrid(); render(); saveBoards(); }
+    const centerCam = { x: Math.round(vw/2), y: Math.round(vh/2), zoom: 1 };
+    if(animate) cinematicGlide(centerCam);
+    else { state.camera = centerCam; updateGrid(); render(); saveBoards(); }
     return;
   }
   let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
   els.forEach(el=>{
     const b=getBounds(el);
-    minX=Math.min(minX, b.x);
-    minY=Math.min(minY, b.y);
-    maxX=Math.max(maxX, b.x + b.w);
-    maxY=Math.max(maxY, b.y + b.h);
+    if(isFinite(b.x) && isFinite(b.y) && isFinite(b.w) && isFinite(b.h) && b.w > 0 && b.h > 0){
+      minX=Math.min(minX, b.x);
+      minY=Math.min(minY, b.y);
+      maxX=Math.max(maxX, b.x + b.w);
+      maxY=Math.max(maxY, b.y + b.h);
+    }
   });
+
+  if(!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)){
+    const centerCam = { x: Math.round(vw/2), y: Math.round(vh/2), zoom: 1 };
+    if(animate) cinematicGlide(centerCam);
+    else { state.camera = centerCam; updateGrid(); render(); saveBoards(); }
+    return;
+  }
+
   const contentW=Math.max(10, maxX - minX);
   const contentH=Math.max(10, maxY - minY);
-  const vw=innerWidth, vh=innerHeight;
-  const padX=Math.max(50, vw*0.08);
-  const padY=Math.max(50, vh*0.08);
-  const availW=Math.max(100, vw - padX*2);
-  const availH=Math.max(100, vh - padY*2);
-  const targetZoom=clamp(Math.min(availW / contentW, availH / contentH), 0.1, 3.0);
+  const padX=Math.max(56, Math.round(vw*0.08));
+  const padY=Math.max(56, Math.round(vh*0.08));
+  const availW=Math.max(80, vw - padX*2);
+  const availH=Math.max(80, vh - padY*2);
+  const targetZoom=clamp(Math.min(availW / contentW, availH / contentH), 0.02, 2.5);
   const centerX=(minX + maxX)/2;
   const centerY=(minY + maxY)/2;
-  const targetX=vw/2 - centerX*targetZoom;
-  const targetY=vh/2 - centerY*targetZoom;
+  const targetX=Math.round(vw/2 - centerX*targetZoom);
+  const targetY=Math.round(vh/2 - centerY*targetZoom);
 
   if(animate){
     cinematicGlide({x:targetX, y:targetY, zoom:targetZoom});
@@ -2617,6 +2636,97 @@ function insertSingleStandardImage(dataUrl, img, centerX, centerY){
   render();
 }
 
+async function insertClipboardImageBlobs(imageBlobs, targetX, targetY){
+  const allBlobs = Array.from(imageBlobs || []).filter(Boolean);
+  if(!allBlobs.length) return;
+
+  const loadedList = [];
+  for(const blob of allBlobs){
+    await new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const dataUrl = ev.target.result;
+        const img = new Image();
+        img.onload = () => {
+          const maxDim = 800;
+          let w = img.naturalWidth || img.width || 480;
+          let h = img.naturalHeight || img.height || 360;
+          if(w > maxDim || h > maxDim){
+            if(w >= h){ h = Math.round((h / w) * maxDim); w = maxDim; }
+            else { w = Math.round((w / h) * maxDim); h = maxDim; }
+          }
+          loadedList.push({ src: dataUrl, img, w, h });
+          resolve();
+        };
+        img.onerror = () => resolve();
+        img.src = dataUrl;
+      };
+      reader.onerror = () => resolve();
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  if(!loadedList.length) return;
+
+  const N = loadedList.length;
+  const cols = N === 1 ? 1 : (N <= 4 ? 2 : (N <= 9 ? 3 : 4));
+  const gap = 32;
+  const colWidths = new Array(cols).fill(0);
+  const rowsCount = Math.ceil(N / cols);
+  const rowHeights = new Array(rowsCount).fill(0);
+
+  for(let i = 0; i < N; i++){
+    const c = i % cols, r = Math.floor(i / cols);
+    colWidths[c] = Math.max(colWidths[c], loadedList[i].w);
+    rowHeights[r] = Math.max(rowHeights[r], loadedList[i].h);
+  }
+
+  const totalW = colWidths.reduce((a, b) => a + b, 0) + (cols - 1) * gap;
+  const totalH = rowHeights.reduce((a, b) => a + b, 0) + (rowsCount - 1) * gap;
+
+  const colXOffsets = [0];
+  for(let c = 1; c < cols; c++) colXOffsets[c] = colXOffsets[c - 1] + colWidths[c - 1] + gap;
+  const rowYOffsets = [0];
+  for(let r = 1; r < rowsCount; r++) rowYOffsets[r] = rowYOffsets[r - 1] + rowHeights[r - 1] + gap;
+
+  const targetCenter = (targetX != null && targetY != null) ? { x: targetX, y: targetY } : getMouseOrViewportWorld();
+  const startX = Math.round(targetCenter.x - totalW / 2);
+  const startY = Math.round(targetCenter.y - totalH / 2);
+
+  pushUndo();
+  const newEls = [];
+  const newIds = [];
+  loadedList.forEach((item, idx) => {
+    const c = idx % cols, r = Math.floor(idx / cols);
+    const cellX = startX + colXOffsets[c];
+    const cellY = startY + rowYOffsets[r];
+    const posX = Math.round(cellX + (colWidths[c] - item.w) / 2);
+    const posY = Math.round(cellY + (rowHeights[r] - item.h) / 2);
+    const id = genId();
+    newIds.push(id);
+    newEls.push({
+      id,
+      type: "image",
+      src: item.src,
+      img: item.img,
+      x: posX,
+      y: posY,
+      w: item.w,
+      h: item.h,
+      rotation: 0
+    });
+  });
+
+  state.elements.push(...newEls);
+  state.selectedIds = newIds;
+  state.selectedId = newIds.length === 1 ? newIds[0] : null;
+  setActiveTool("select", { keepSelection: true });
+  if(newIds.length === 1) showToolbar(newEls[0]);
+  else if(newIds.length > 1) showMultiToolbar();
+  saveBoards(true);
+  render();
+}
+
 async function handlePastedOrUploadedImages(fileList, originX, originY){
   const allFiles = Array.from(fileList||[]);
   if(!allFiles.length) return;
@@ -2936,7 +3046,7 @@ async function handleClipboardPaste(targetCoord){
 
         if(imgBlobs.length > 0){
           _lastPasteTimestamp = Date.now();
-          await handlePastedOrUploadedImages(imgBlobs, wx, wy);
+          await insertClipboardImageBlobs(imgBlobs, wx, wy);
           return;
         }
 
@@ -5111,7 +5221,7 @@ window.addEventListener("paste",e=>{
     if(imageFiles.length > 0){
       e.preventDefault();
       _lastPasteTimestamp = Date.now();
-      handlePastedOrUploadedImages(imageFiles, targetX, targetY);
+      insertClipboardImageBlobs(imageFiles, targetX, targetY);
       return;
     }
     const text = e.clipboardData?.getData("text/plain");
@@ -5221,7 +5331,20 @@ const _homeBtn=document.getElementById("home-btn");
 if(_homeBtn) _homeBtn.onclick=()=>goHome();
 const _homeBtn2=document.getElementById("boards-home-btn");
 if(_homeBtn2) _homeBtn2.onclick=()=>goHome();
-loadBoards().then(()=>{resizeCanvas();updateGrid();updateCursor();lucideCreateIcons();}).catch(e=>console.error(e));
+loadBoards().then(()=>{
+  resizeCanvas();
+  const cur = currentBoardRecord();
+  if(cur && (cur.needsFitToScreen === true || cur.fitToScreenOnOpen === true) && state.elements.length > 0){
+    fitToScreen(false);
+    cur.needsFitToScreen = false;
+    cur.fitToScreenOnOpen = false;
+    cur.camera = { ...state.camera };
+    if(Store && Store.putBoard) Store.putBoard(cur).catch(e=>console.warn(e));
+  }
+  updateGrid();
+  updateCursor();
+  lucideCreateIcons();
+}).catch(e=>console.error(e));
 syncGridButtons(container && container.classList.contains("line-grid")?"line-grid":container && container.classList.contains("dot-grid")?"dot-grid":"bg-white");
 syncPlaceButtons();
 

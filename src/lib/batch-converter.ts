@@ -259,6 +259,7 @@ export class BatchConversionQueue {
       week_category: cat.week_category,
       createdAt: baseTime,
       updatedAt: baseTime,
+      needsFitToScreen: true,
       elements: [
         {
           id: genBoardId(),
@@ -378,6 +379,7 @@ export class BatchConversionQueue {
             week_category: smartData.week_category ?? cat.week_category,
             createdAt: baseTime,
             updatedAt: baseTime,
+            needsFitToScreen: true,
             elements: smartData.elements,
             bgColor: smartData.bgColor || "#ffffff",
             theme: smartData.theme || "classlight",
@@ -424,6 +426,7 @@ export class BatchConversionQueue {
         week_category: jb.week_category ?? cat.week_category,
         createdAt: baseTime,
         updatedAt: baseTime,
+        needsFitToScreen: true,
         elements: Array.isArray(jb.elements) ? jb.elements : [],
       };
 
@@ -465,6 +468,7 @@ export class BatchConversionQueue {
         week_category: cat.week_category,
         createdAt: baseTime,
         updatedAt: baseTime,
+        needsFitToScreen: true,
         elements,
       };
 
@@ -525,6 +529,7 @@ export class BatchConversionQueue {
       week_category: cat.week_category,
       createdAt: baseTime,
       updatedAt: baseTime,
+      needsFitToScreen: true,
       elements: reconstructedElements,
       camera: {
         x: -boundsCenter.x,

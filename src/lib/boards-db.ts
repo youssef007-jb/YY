@@ -29,6 +29,8 @@ export type BoardRecord = {
   phase_category?: number | null | undefined;
   week_category?: number | null | undefined;
   docId?: string | undefined;
+  needsFitToScreen?: boolean | undefined;
+  fitToScreenOnOpen?: boolean | undefined;
   layers?: unknown[] | undefined;
   activeLayerId?: string | undefined;
 };
