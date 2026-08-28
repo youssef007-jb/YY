@@ -12,11 +12,16 @@ import {
   Download,
   Upload,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   AlertTriangle,
   CheckSquare,
   Square,
   Check,
+  CheckCircle2,
   X,
+  Sparkles,
+  RotateCcw,
 } from "lucide-react";
 import {
   createBoard,
@@ -35,6 +40,10 @@ import {
 import { renderPdfToImages } from "@/lib/pdf-importer";
 import { generateBoardThumbnail } from "@/lib/thumbnail-generator";
 import { embedSmartPngMetadata, extractSmartPngMetadata } from "@/lib/smart-png";
+import {
+  BatchConversionQueue,
+  type BatchProgressState,
+} from "@/lib/batch-converter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -538,7 +547,11 @@ function HomePage() {
     fileCount: number;
     combinedBoard: BoardRecord;
     separateBoards: BoardRecord[];
+    rawFiles: File[];
   } | null>(null);
+  const [batchProgress, setBatchProgress] = useState<BatchProgressState | null>(null);
+  const [batchExpanded, setBatchExpanded] = useState(false);
+  const queueRef = useRef<BatchConversionQueue | null>(null);
   const renameRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1028,6 +1041,7 @@ function HomePage() {
         fileCount: fileEntries.length,
         combinedBoard,
         separateBoards,
+        rawFiles: files,
       });
     } catch (err) {
       console.error("Import failure:", err);
@@ -1035,6 +1049,52 @@ function HomePage() {
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  };
+
+  const handleConvertAll = () => {
+    if (!uploadPrompt || !uploadPrompt.rawFiles || uploadPrompt.rawFiles.length === 0) return;
+    const rawFiles = uploadPrompt.rawFiles;
+    setUploadPrompt(null);
+
+    const queue = new BatchConversionQueue(rawFiles, {
+      concurrency: 3,
+      onProgress: (prog) => {
+        setBatchProgress({ ...prog });
+      },
+      onItemCompleted: (board) => {
+        // First finished = first displayed! Reactively update boards list
+        setBoards((prev) => {
+          const list = prev || [];
+          const filtered = list.filter((b) => b.id !== board.id);
+          return [board, ...filtered];
+        });
+      },
+      onItemFailed: (errMsg, item) => {
+        console.warn(`Conversion failed for ${item.fileName}: ${errMsg}`);
+      },
+      onAllFinished: () => {
+        void refresh();
+      },
+    });
+
+    queueRef.current = queue;
+    queue.start();
+  };
+
+  const handleRetryItem = (itemId: string) => {
+    queueRef.current?.retryItem(itemId);
+  };
+
+  const handleRetryAllFailed = () => {
+    queueRef.current?.retryAllFailed();
+  };
+
+  const handleCancelBatch = () => {
+    queueRef.current?.cancel();
+  };
+
+  const handleDismissBatch = () => {
+    setBatchProgress(null);
   };
 
   const handleOpenCombined = async () => {
@@ -1610,8 +1670,8 @@ function HomePage() {
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
               {uploadPrompt?.fileCount === 1
-                ? `"${uploadPrompt.separateBoards[0]?.name}" is ready. Would you like to open it now or return to the dashboard?`
-                : `Choose "Open all in 1 whiteboard" to combine all ${uploadPrompt?.fileCount || 0} files into one board, or "Back to homepage" to create ${uploadPrompt?.fileCount || 0} separate whiteboards.`}
+                ? `"${uploadPrompt.separateBoards[0]?.name}" is ready. Convert it into editable whiteboard elements, or open it now.`
+                : `Choose "Convert all" to reconstruct each file into a separate editable whiteboard, "Open all in 1 whiteboard" to combine them, or "Back to homepage" to save image boards.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="mt-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
@@ -1623,14 +1683,139 @@ function HomePage() {
               Back to homepage
             </Button>
             <Button
+              variant="secondary"
               onClick={() => void handleOpenCombined()}
-              className="rounded-xl text-xs font-semibold"
+              className="rounded-xl text-xs font-medium"
             >
               {uploadPrompt?.fileCount === 1 ? "Open now" : "Open all in 1 whiteboard"}
+            </Button>
+            <Button
+              onClick={handleConvertAll}
+              className="rounded-xl text-xs font-semibold gap-1.5 shadow-sm"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              {uploadPrompt?.fileCount === 1
+                ? "Convert to Whiteboard"
+                : `Convert all (${uploadPrompt?.fileCount || 0} boards)`}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Floating Batch Conversion Progress Card */}
+      {batchProgress && (
+        <aside
+          aria-label="Batch conversion progress"
+          className="fixed bottom-6 right-6 z-50 max-w-sm w-[calc(100vw-3rem)] pointer-events-auto animate-in fade-in slide-in-from-bottom-5 duration-200"
+        >
+          <div className="rounded-2xl border border-border/80 bg-background/95 p-3.5 shadow-2xl backdrop-blur-md space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                {batchProgress.isFinished ? (
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="h-4 w-4" />
+                  </div>
+                ) : (
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <h4 className="text-xs font-bold text-foreground truncate">
+                    {batchProgress.isFinished
+                      ? `Conversion Complete (${batchProgress.completed} of ${batchProgress.total})`
+                      : `Converting Whiteboards (${batchProgress.completed + batchProgress.failed} / ${batchProgress.total})`}
+                  </h4>
+                  <p className="text-[11px] text-muted-foreground truncate">
+                    {batchProgress.isFinished
+                      ? batchProgress.failed > 0
+                        ? `${batchProgress.completed} created, ${batchProgress.failed} saved as image`
+                        : "All whiteboards ready and editable"
+                      : `${batchProgress.processing} in progress, ${batchProgress.pending} queued`}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setBatchExpanded((v) => !v)}
+                  className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+                  title={batchExpanded ? "Collapse" : "Expand"}
+                >
+                  {batchExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                </Button>
+                {batchProgress.isFinished ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleDismissBatch}
+                    className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+                    title="Close"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleCancelBatch}
+                    className="h-7 px-2 rounded-lg text-[11px] font-medium text-destructive hover:bg-destructive/10"
+                  >
+                    Cancel
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="space-y-1">
+              <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-300 ${
+                    batchProgress.isFinished ? "bg-emerald-500" : "bg-primary"
+                  }`}
+                  style={{ width: `${batchProgress.percent}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Collapsible item list */}
+            {batchExpanded && (
+              <div className="max-h-48 overflow-y-auto space-y-1.5 pt-1 pr-1 text-[11px] border-t border-border/50">
+                {batchProgress.items.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between gap-2 py-0.5">
+                    <span className="truncate max-w-[190px] font-medium text-foreground">
+                      {item.fileName}
+                    </span>
+                    <span className="shrink-0 flex items-center gap-1 text-[10px]">
+                      {item.status === "completed" && (
+                        <span className="text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                          <Check className="h-3 w-3" /> Done
+                        </span>
+                      )}
+                      {item.status === "processing" && (
+                        <span className="text-primary font-medium flex items-center gap-1">
+                          <Loader2 className="h-3 w-3 animate-spin" /> {item.statusText || "Converting"}
+                        </span>
+                      )}
+                      {item.status === "pending" && (
+                        <span className="text-muted-foreground">Queued</span>
+                      )}
+                      {item.status === "failed" && (
+                        <span className="text-amber-600 dark:text-amber-400">
+                          Saved as image
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </aside>
+      )}
 
       {/* Floating Multi-Selection Action Bar */}
       {selectedIds.size > 0 && (

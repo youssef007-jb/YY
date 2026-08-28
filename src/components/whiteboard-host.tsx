@@ -7,6 +7,11 @@ import {
   extractSmartPngMetadata,
   isSmartPngFile,
 } from "@/lib/smart-png";
+import {
+  prepareImageForAnalysis,
+  analyzeWhiteboardImage,
+  reconstructWhiteboardElements,
+} from "@/lib/image-importer";
 
 function loadScript(src: string) {
   return new Promise<void>((resolve, reject) => {
@@ -43,6 +48,11 @@ type HbiboWindow = {
     extractSmartPngMetadata: typeof extractSmartPngMetadata;
     isSmartPngFile: typeof isSmartPngFile;
   };
+  SmartImageImporter?: {
+    prepareImageForAnalysis: typeof prepareImageForAnalysis;
+    analyzeWhiteboardImage: typeof analyzeWhiteboardImage;
+    reconstructWhiteboardElements: typeof reconstructWhiteboardElements;
+  };
 };
 
 export function WhiteboardHost({
@@ -55,13 +65,18 @@ export function WhiteboardHost({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // Expose PDF importer and Smart PNG engine for whiteboard canvas
+      // Expose PDF importer, Smart PNG engine, and Smart Image Importer for whiteboard canvas
       const win = window as unknown as HbiboWindow;
       win.renderPdfToImages = renderPdfToImages;
       win.SmartPNG = {
         embedSmartPngMetadata,
         extractSmartPngMetadata,
         isSmartPngFile,
+      };
+      win.SmartImageImporter = {
+        prepareImageForAnalysis,
+        analyzeWhiteboardImage,
+        reconstructWhiteboardElements,
       };
 
       let initialBoard: BoardRecord | null = getWorkspaceBoardPayload(boardId);
@@ -104,3 +119,4 @@ export function WhiteboardHost({
     />
   );
 }
+

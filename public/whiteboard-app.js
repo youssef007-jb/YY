@@ -2223,11 +2223,380 @@ const _rcDup = document.getElementById("rc-duplicate");
 if(_rcDup) _rcDup.onclick=()=>{hideRC(); if(state.selectedIds.length>1){duplicateSelected();return;} if(!state.selectedId){const el=targetCopyElement(); if(el) state.selectedId=el.id;} duplicateSelected()};
 const _rcDel = document.getElementById("rc-delete");
 if(_rcDel) _rcDel.onclick=()=>{hideRC(); if(state.selectedIds.length>1){deleteSelected();return;} if(!state.selectedId){const el=targetCopyElement(); if(el) state.selectedId=el.id;} deleteSelected()};
+function hideImageImportModals(){
+  const modals = [
+    "image-import-choice-modal",
+    "image-conversion-progress-modal",
+    "image-conversion-summary-modal",
+    "image-conversion-error-modal",
+  ];
+  modals.forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.classList.add("hidden");
+  });
+}
+
+function showImageImportChoiceModal(file, originX, originY){
+  hideImageImportModals();
+  const modal = document.getElementById("image-import-choice-modal");
+  const thumb = document.getElementById("image-import-preview-thumb");
+  const nameEl = document.getElementById("image-import-filename");
+  const dimsEl = document.getElementById("image-import-dims");
+  if(!modal) return;
+
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const dataUrl = ev.target.result;
+    if(thumb) thumb.src = dataUrl;
+    if(nameEl) nameEl.textContent = file.name || "screenshot.png";
+
+    const img = new Image();
+    img.onload = () => {
+      if(dimsEl) dimsEl.textContent = `${img.naturalWidth || img.width} × ${img.naturalHeight || img.height} px`;
+    };
+    img.src = dataUrl;
+  };
+  reader.readAsDataURL(file);
+
+  modal.classList.remove("hidden");
+  if(window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+
+  const btnConvert = document.getElementById("btn-choice-convert-whiteboard");
+  const btnInsertImg = document.getElementById("btn-choice-insert-image");
+  const btnClose = document.getElementById("btn-close-image-import");
+  const btnCancel = document.getElementById("btn-cancel-image-import");
+
+  if(btnConvert){
+    btnConvert.onclick = () => {
+      hideImageImportModals();
+      startImageConversion(file, originX, originY);
+    };
+  }
+
+  if(btnInsertImg){
+    btnInsertImg.onclick = () => {
+      hideImageImportModals();
+      insertFileAsStandardImage(file, originX, originY);
+    };
+  }
+
+  if(btnClose) btnClose.onclick = () => hideImageImportModals();
+  if(btnCancel) btnCancel.onclick = () => hideImageImportModals();
+}
+
+async function startImageConversion(file, originX, originY){
+  hideImageImportModals();
+  const progressModal = document.getElementById("image-conversion-progress-modal");
+  const progressStatus = document.getElementById("conversion-progress-status");
+  if(progressModal) progressModal.classList.remove("hidden");
+  if(progressStatus) progressStatus.textContent = "Analyzing image with AI vision...";
+  if(window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+
+  try {
+    const importer = window.SmartImageImporter;
+    if(!importer){
+      throw new Error("Smart Image Importer module is initializing, please try again in a moment.");
+    }
+
+    const prepared = await importer.prepareImageForAnalysis(file);
+    if(progressStatus) progressStatus.textContent = "Recognizing shapes, text & diagrams...";
+
+    const aiResult = await importer.analyzeWhiteboardImage(prepared, (status) => {
+      if(progressStatus) progressStatus.textContent = status;
+    });
+
+    if(progressStatus) progressStatus.textContent = "Reconstructing whiteboard objects...";
+
+    const targetCenter = (originX != null && originY != null) ? { x: originX, y: originY } : getViewportCenter();
+    const reconstructed = importer.reconstructWhiteboardElements(aiResult, prepared.originalImg, {
+      targetCenter,
+    });
+
+    if(progressModal) progressModal.classList.add("hidden");
+    showConversionSummary(reconstructed, prepared, targetCenter, file);
+  } catch(err){
+    console.error("Conversion failed:", err);
+    if(progressModal) progressModal.classList.add("hidden");
+    showConversionError(err, file, originX, originY);
+  }
+}
+
+function showConversionSummary(reconstructed, prepared, targetCenter, file){
+  hideImageImportModals();
+  const modal = document.getElementById("image-conversion-summary-modal");
+  if(!modal) return;
+
+  const counts = {
+    text: 0,
+    sticky: 0,
+    shapes: 0,
+    arrows: 0,
+    drawings: 0,
+    images: 0
+  };
+
+  reconstructed.elements.forEach(el => {
+    if(el.type === "text") counts.text++;
+    else if(el.type === "sticky") counts.sticky++;
+    else if(el.type === "arrow" || el.type === "line" || el.type === "doubleArrow" || el.type === "dashed") counts.arrows++;
+    else if(el.type === "pen" || el.type === "highlighter") counts.drawings++;
+    else if(el.type === "image") counts.images++;
+    else counts.shapes++;
+  });
+
+  const setText = (id, val) => {
+    const el = document.getElementById(id);
+    if(el) el.textContent = String(val);
+  };
+
+  setText("sum-text-count", counts.text);
+  setText("sum-sticky-count", counts.sticky);
+  setText("sum-shapes-count", counts.shapes);
+  setText("sum-arrows-count", counts.arrows);
+  setText("sum-drawings-count", counts.drawings);
+  setText("sum-images-count", counts.images);
+
+  const chkBackup = document.getElementById("chk-keep-original-image");
+  if(chkBackup) chkBackup.checked = false;
+
+  modal.classList.remove("hidden");
+  if(window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+
+  const btnInsertCurrent = document.getElementById("btn-insert-reconstructed-current");
+  const btnInsertNew = document.getElementById("btn-insert-reconstructed-new");
+  const btnFallback = document.getElementById("btn-fallback-insert-image");
+  const btnClose = document.getElementById("btn-close-summary-modal");
+
+  if(btnInsertCurrent){
+    btnInsertCurrent.onclick = () => {
+      hideImageImportModals();
+      applyReconstructedElementsToCurrentBoard(reconstructed, chkBackup?.checked, prepared.originalImg);
+    };
+  }
+
+  if(btnInsertNew){
+    btnInsertNew.onclick = () => {
+      hideImageImportModals();
+      applyReconstructedElementsToNewBoard(reconstructed, chkBackup?.checked, prepared.originalImg, reconstructed.title);
+    };
+  }
+
+  if(btnFallback){
+    btnFallback.onclick = () => {
+      hideImageImportModals();
+      insertSingleStandardImage(prepared.dataUrl, prepared.originalImg, targetCenter.x, targetCenter.y);
+    };
+  }
+
+  if(btnClose){
+    btnClose.onclick = () => hideImageImportModals();
+  }
+}
+
+function applyReconstructedElementsToCurrentBoard(reconstructed, keepBackup, originalImg){
+  pushUndo();
+  const elementsToAdd = [...reconstructed.elements];
+
+  if(keepBackup && originalImg){
+    const backupW = reconstructed.bounds.width;
+    const backupH = reconstructed.bounds.height;
+    const backupX = reconstructed.bounds.x - backupW - 48;
+    const backupY = reconstructed.bounds.y;
+    const backupEl = {
+      id: genId(),
+      type: "image",
+      src: originalImg.src,
+      img: originalImg,
+      x: backupX,
+      y: backupY,
+      w: backupW,
+      h: backupH,
+      rotation: 0
+    };
+    elementsToAdd.unshift(backupEl);
+  }
+
+  elementsToAdd.forEach(el => {
+    if(el.type === "image" && !el.img && el.src){
+      const img = new Image();
+      img.onload = render;
+      img.src = el.src;
+      el.img = img;
+    }
+  });
+
+  state.elements.push(...elementsToAdd);
+  const newIds = elementsToAdd.map(e => e.id);
+  state.selectedIds = newIds;
+  state.selectedId = newIds.length === 1 ? newIds[0] : null;
+  setActiveTool("select", { keepSelection: true });
+
+  if(newIds.length === 1 && elementsToAdd[0]) showToolbar(elementsToAdd[0]);
+  else if(newIds.length > 1) showMultiToolbar();
+
+  saveBoards(true);
+  render();
+  showSmartToast(`✨ Reconstructed ${reconstructed.elements.length} editable whiteboard objects!`, "✨");
+}
+
+function applyReconstructedElementsToNewBoard(reconstructed, keepBackup, originalImg, title){
+  const elementsToAdd = [...reconstructed.elements];
+
+  if(keepBackup && originalImg){
+    const backupW = reconstructed.bounds.width;
+    const backupH = reconstructed.bounds.height;
+    const backupX = reconstructed.bounds.x - backupW - 48;
+    const backupY = reconstructed.bounds.y;
+    const backupEl = {
+      id: genId(),
+      type: "image",
+      src: originalImg.src,
+      img: originalImg,
+      x: backupX,
+      y: backupY,
+      w: backupW,
+      h: backupH,
+      rotation: 0
+    };
+    elementsToAdd.unshift(backupEl);
+  }
+
+  elementsToAdd.forEach(el => {
+    if(el.type === "image" && !el.img && el.src){
+      const img = new Image();
+      img.onload = render;
+      img.src = el.src;
+      el.img = img;
+    }
+  });
+
+  const boardName = title || "Imported Whiteboard";
+  const newBoard = Store && Store.blankBoard ? Store.blankBoard(boardName) : {
+    id: "b" + Math.random().toString(36).slice(2) + Date.now().toString(36),
+    name: boardName,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    elements: [],
+    camera: { x: 0, y: 0, zoom: 1 },
+    gridStyle: "none",
+    gridSpacing: 24,
+    bgColor: "#ffffff",
+    theme: "classlight",
+    toolbarPos: "bottom",
+    stickyAutoEdit: true,
+    thumb: null,
+  };
+
+  newBoard.elements = elementsToAdd;
+
+  const boundsCenterX = reconstructed.bounds.x + reconstructed.bounds.width / 2;
+  const boundsCenterY = reconstructed.bounds.y + reconstructed.bounds.height / 2;
+  newBoard.camera = {
+    x: Math.round(window.innerWidth / 2 - boundsCenterX),
+    y: Math.round(window.innerHeight / 2 - boundsCenterY),
+    zoom: 1
+  };
+
+  state.whiteboards.unshift(newBoard);
+  if(Store && Store.putBoard){
+    Store.putBoard(newBoard).catch(e => console.warn(e));
+  }
+  state.currentBoardId = newBoard.id;
+  syncBoardUrl(newBoard.id);
+  applyBoardRecord(newBoard);
+  saveBoards(true);
+  render();
+  showSmartToast(`✨ Created new whiteboard with ${reconstructed.elements.length} editable objects!`, "✨");
+}
+
+function showConversionError(err, file, originX, originY){
+  hideImageImportModals();
+  const modal = document.getElementById("image-conversion-error-modal");
+  const msgEl = document.getElementById("conversion-error-msg");
+  if(msgEl){
+    msgEl.textContent = err?.message || "Could not analyze the image. You can try again or insert it as a standard image.";
+  }
+  if(modal) modal.classList.remove("hidden");
+  if(window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+
+  const btnRetry = document.getElementById("btn-error-retry");
+  const btnInsertAsImg = document.getElementById("btn-error-insert-as-image");
+  const btnCancel = document.getElementById("btn-error-cancel");
+
+  if(btnRetry){
+    btnRetry.onclick = () => {
+      hideImageImportModals();
+      startImageConversion(file, originX, originY);
+    };
+  }
+
+  if(btnInsertAsImg){
+    btnInsertAsImg.onclick = () => {
+      hideImageImportModals();
+      insertFileAsStandardImage(file, originX, originY);
+    };
+  }
+
+  if(btnCancel){
+    btnCancel.onclick = () => hideImageImportModals();
+  }
+}
+
+function insertFileAsStandardImage(file, originX, originY){
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const dataUrl = ev.target.result;
+    const img = new Image();
+    img.onload = () => {
+      const targetCenter = (originX != null && originY != null) ? { x: originX, y: originY } : getViewportCenter();
+      insertSingleStandardImage(dataUrl, img, targetCenter.x, targetCenter.y);
+    };
+    img.src = dataUrl;
+  };
+  reader.readAsDataURL(file);
+}
+
+function insertSingleStandardImage(dataUrl, img, centerX, centerY){
+  const maxDim = 520;
+  let w = img.naturalWidth || img.width || 480;
+  let h = img.naturalHeight || img.height || 360;
+  if(w > maxDim || h > maxDim){
+    if(w >= h){ h = Math.round((h / w) * maxDim); w = maxDim; }
+    else { w = Math.round((w / h) * maxDim); h = maxDim; }
+  }
+
+  const posX = Math.round(centerX - w / 2);
+  const posY = Math.round(centerY - h / 2);
+  const id = genId();
+
+  pushUndo();
+  const el = {
+    id,
+    type: "image",
+    src: dataUrl,
+    img,
+    x: posX,
+    y: posY,
+    w,
+    h,
+    rotation: 0
+  };
+  state.elements.push(el);
+  state.selectedIds = [id];
+  state.selectedId = id;
+  setActiveTool("select", { keepSelection: true });
+  showToolbar(el);
+  saveBoards(true);
+  render();
+}
+
 async function handlePastedOrUploadedImages(fileList, originX, originY){
   const allFiles = Array.from(fileList||[]);
   if(!allFiles.length) return;
   
+  const regularImageFiles = [];
   const loadedList = [];
+
   for(const file of allFiles){
     if(!file) continue;
 
@@ -2344,29 +2713,40 @@ async function handlePastedOrUploadedImages(fileList, originX, originY){
 
     const isImage = file.type?.startsWith("image/") || /\.(png|jpe?g|webp|svg|gif)$/i.test(file.name||"");
     if(isImage){
-      await new Promise(resolve => {
-        const reader = new FileReader();
-        reader.onload = ev => {
-          const dataUrl = ev.target.result;
-          const img = new Image();
-          img.onload = () => {
-            const maxDim = 520;
-            let w = img.naturalWidth || img.width || 480;
-            let h = img.naturalHeight || img.height || 360;
-            if(w > maxDim || h > maxDim){
-              if(w >= h){ h = Math.round((h / w) * maxDim); w = maxDim; }
-              else { w = Math.round((w / h) * maxDim); h = maxDim; }
-            }
-            loadedList.push({ src: dataUrl, img, w, h });
-            resolve();
-          };
-          img.onerror = () => resolve();
-          img.src = dataUrl;
-        };
-        reader.onerror = () => resolve();
-        reader.readAsDataURL(file);
-      });
+      regularImageFiles.push(file);
     }
+  }
+
+  // If a single regular image was provided, prompt user to Convert to Whiteboard or Insert as Image
+  if(regularImageFiles.length === 1 && loadedList.length === 0){
+    showImageImportChoiceModal(regularImageFiles[0], originX, originY);
+    return;
+  }
+
+  // Otherwise, load all regular images for standard multi-grid placement
+  for(const file of regularImageFiles){
+    await new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const dataUrl = ev.target.result;
+        const img = new Image();
+        img.onload = () => {
+          const maxDim = 520;
+          let w = img.naturalWidth || img.width || 480;
+          let h = img.naturalHeight || img.height || 360;
+          if(w > maxDim || h > maxDim){
+            if(w >= h){ h = Math.round((h / w) * maxDim); w = maxDim; }
+            else { w = Math.round((w / h) * maxDim); h = maxDim; }
+          }
+          loadedList.push({ src: dataUrl, img, w, h });
+          resolve();
+        };
+        img.onerror = () => resolve();
+        img.src = dataUrl;
+      };
+      reader.onerror = () => resolve();
+      reader.readAsDataURL(file);
+    });
   }
 
   if(!loadedList.length) return;

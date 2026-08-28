@@ -313,6 +313,197 @@
   </div>
 </div>
 
+<!-- Image Import Choice Modal -->
+<div id="image-import-choice-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-150">
+  <div class="bg-white/98 border border-slate-200/90 rounded-3xl p-6 shadow-2xl backdrop-blur-md w-full max-w-[440px] animate-in zoom-in-95 duration-150">
+    <div class="flex items-center justify-between border-b pb-3 mb-4">
+      <div class="flex items-center gap-2.5">
+        <div class="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-900 text-white">
+          <i data-lucide="sparkles" class="w-4 h-4"></i>
+        </div>
+        <div>
+          <h3 class="font-bold text-sm text-slate-900">Import Image / Whiteboard</h3>
+          <p class="text-[11px] text-slate-500">Choose how to import this image onto your canvas</p>
+        </div>
+      </div>
+      <button id="btn-close-image-import" class="p-1 rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700"><i data-lucide="x" class="w-4 h-4"></i></button>
+    </div>
+
+    <!-- Image Preview Thumbnail Header -->
+    <div class="flex items-center gap-3 p-3 bg-slate-50 border border-slate-200/80 rounded-2xl mb-4">
+      <div class="w-14 h-14 rounded-xl overflow-hidden bg-slate-200 shrink-0 border border-slate-300/60 flex items-center justify-center">
+        <img id="image-import-preview-thumb" src="" alt="Preview" class="w-full h-full object-cover" />
+      </div>
+      <div class="flex-1 min-w-0">
+        <div id="image-import-filename" class="text-xs font-semibold text-slate-800 truncate">screenshot.png</div>
+        <div id="image-import-dims" class="text-[11px] text-slate-400 mt-0.5">1920 × 1080 px</div>
+      </div>
+    </div>
+
+    <!-- Options -->
+    <div class="space-y-2.5">
+      <!-- Option 1: AI Convert to Whiteboard (Featured) -->
+      <button id="btn-choice-convert-whiteboard" class="w-full text-left p-3.5 rounded-2xl border-2 border-emerald-500 bg-emerald-50/40 hover:bg-emerald-50 transition flex items-start gap-3 group relative cursor-pointer shadow-xs">
+        <div class="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+          <i data-lucide="wand-2" class="w-4 h-4"></i>
+        </div>
+        <div class="flex-1">
+          <div class="flex items-center justify-between mb-0.5">
+            <span class="font-bold text-xs text-emerald-950">Convert to Whiteboard</span>
+            <span class="text-[10px] font-bold uppercase tracking-wider bg-emerald-600 text-white px-2 py-0.5 rounded-full">AI Vision</span>
+          </div>
+          <p class="text-[11px] text-emerald-900/80 leading-snug">
+            Reconstructs text, sticky notes, shapes, arrows, handwriting & diagrams into native editable objects.
+          </p>
+        </div>
+      </button>
+
+      <!-- Option 2: Insert as Standard Image -->
+      <button id="btn-choice-insert-image" class="w-full text-left p-3.5 rounded-2xl border border-slate-200 bg-slate-50/60 hover:bg-slate-100 hover:border-slate-300 transition flex items-start gap-3 cursor-pointer">
+        <div class="w-8 h-8 rounded-xl bg-slate-200 text-slate-700 flex items-center justify-center shrink-0 mt-0.5">
+          <i data-lucide="image" class="w-4 h-4"></i>
+        </div>
+        <div class="flex-1">
+          <span class="font-semibold text-xs text-slate-900 block mb-0.5">Insert as Standard Image</span>
+          <p class="text-[11px] text-slate-500 leading-snug">
+            Places the original raster screenshot directly on the canvas as a standard image element.
+          </p>
+        </div>
+      </button>
+    </div>
+
+    <div class="mt-4 pt-3 border-t flex justify-end">
+      <button id="btn-cancel-image-import" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition">
+        Cancel
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Image Conversion Progress Modal -->
+<div id="image-conversion-progress-modal" class="hidden fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
+  <div class="bg-white/98 border border-slate-200/90 rounded-3xl p-6 shadow-2xl backdrop-blur-md w-full max-w-[360px] text-center animate-in zoom-in-95 duration-150">
+    <div class="relative w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+      <div class="absolute inset-0 rounded-full border-3 border-slate-200 border-t-emerald-600 animate-spin"></div>
+      <div class="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
+        <i data-lucide="sparkles" class="w-5 h-5 animate-pulse"></i>
+      </div>
+    </div>
+    
+    <h3 id="conversion-progress-status" class="font-bold text-sm text-slate-900 mb-1">Analyzing image...</h3>
+    <p class="text-[11px] text-slate-500 mb-4">Reconstructing vector shapes, text, sticky notes & annotations</p>
+
+    <!-- Progress step indicators -->
+    <div class="flex items-center justify-center gap-2 text-[10px] text-slate-400">
+      <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> Upload</span>
+      <span class="text-slate-300">➔</span>
+      <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-ping"></span> AI Vision</span>
+      <span class="text-slate-300">➔</span>
+      <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span> Reconstruct</span>
+    </div>
+  </div>
+</div>
+
+<!-- Image Conversion Summary Modal -->
+<div id="image-conversion-summary-modal" class="hidden fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
+  <div class="bg-white/98 border border-slate-200/90 rounded-3xl p-6 shadow-2xl backdrop-blur-md w-full max-w-[480px] animate-in zoom-in-95 duration-150">
+    <div class="flex items-center justify-between border-b pb-3 mb-4">
+      <div class="flex items-center gap-2.5">
+        <div class="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-600 text-white">
+          <i data-lucide="check-check" class="w-4 h-4"></i>
+        </div>
+        <div>
+          <h3 class="font-bold text-sm text-slate-900">Conversion Complete</h3>
+          <p class="text-[11px] text-slate-500">Elements recognized and ready for canvas insertion</p>
+        </div>
+      </div>
+      <button id="btn-close-summary-modal" class="p-1 rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700"><i data-lucide="x" class="w-4 h-4"></i></button>
+    </div>
+
+    <!-- Recognition Stats Grid -->
+    <div class="grid grid-cols-3 gap-2 mb-4">
+      <div class="p-2.5 bg-slate-50 border border-slate-200/80 rounded-2xl text-center">
+        <div class="text-[10px] text-slate-500 font-medium mb-0.5">Typed Text</div>
+        <div id="sum-text-count" class="text-lg font-bold text-slate-800">0</div>
+      </div>
+      <div class="p-2.5 bg-amber-50/60 border border-amber-200/80 rounded-2xl text-center">
+        <div class="text-[10px] text-amber-700 font-medium mb-0.5">Sticky Notes</div>
+        <div id="sum-sticky-count" class="text-lg font-bold text-amber-900">0</div>
+      </div>
+      <div class="p-2.5 bg-blue-50/60 border border-blue-200/80 rounded-2xl text-center">
+        <div class="text-[10px] text-blue-700 font-medium mb-0.5">Shapes</div>
+        <div id="sum-shapes-count" class="text-lg font-bold text-blue-900">0</div>
+      </div>
+      <div class="p-2.5 bg-indigo-50/60 border border-indigo-200/80 rounded-2xl text-center">
+        <div class="text-[10px] text-indigo-700 font-medium mb-0.5">Arrows & Lines</div>
+        <div id="sum-arrows-count" class="text-lg font-bold text-indigo-900">0</div>
+      </div>
+      <div class="p-2.5 bg-rose-50/60 border border-rose-200/80 rounded-2xl text-center">
+        <div class="text-[10px] text-rose-700 font-medium mb-0.5">Drawings & Ink</div>
+        <div id="sum-drawings-count" class="text-lg font-bold text-rose-900">0</div>
+      </div>
+      <div class="p-2.5 bg-emerald-50/60 border border-emerald-200/80 rounded-2xl text-center">
+        <div class="text-[10px] text-emerald-700 font-medium mb-0.5">Images & Regions</div>
+        <div id="sum-images-count" class="text-lg font-bold text-emerald-900">0</div>
+      </div>
+    </div>
+
+    <!-- Backup Image Option -->
+    <label class="flex items-center gap-2.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 cursor-pointer select-none mb-4 hover:bg-slate-100/80 transition">
+      <input type="checkbox" id="chk-keep-original-image" class="w-4 h-4 rounded text-slate-900 accent-slate-900 cursor-pointer" />
+      <span>Keep original image as backup (places original screenshot alongside objects)</span>
+    </label>
+
+    <!-- Actions -->
+    <div class="space-y-2">
+      <button id="btn-insert-reconstructed-current" class="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shadow-xs flex items-center justify-center gap-2 transition active:scale-98 cursor-pointer">
+        <i data-lucide="plus-circle" class="w-4 h-4"></i>
+        <span>Insert into Whiteboard</span>
+      </button>
+
+      <div class="grid grid-cols-2 gap-2">
+        <button id="btn-insert-reconstructed-new" class="py-2 px-3 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 text-xs font-semibold transition active:scale-98 flex items-center justify-center gap-1.5 cursor-pointer">
+          <i data-lucide="plus-square" class="w-3.5 h-3.5 text-slate-500"></i>
+          <span>New Whiteboard</span>
+        </button>
+        <button id="btn-fallback-insert-image" class="py-2 px-3 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-medium transition active:scale-98 flex items-center justify-center gap-1.5 cursor-pointer">
+          <i data-lucide="image" class="w-3.5 h-3.5 text-slate-400"></i>
+          <span>Insert as Image</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Image Conversion Error Modal -->
+<div id="image-conversion-error-modal" class="hidden fixed inset-0 z-[130] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
+  <div class="bg-white/98 border border-slate-200/90 rounded-3xl p-6 shadow-2xl backdrop-blur-md w-full max-w-[420px] text-center animate-in zoom-in-95 duration-150">
+    <div class="w-12 h-12 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mx-auto mb-3">
+      <i data-lucide="sparkles" class="w-6 h-6"></i>
+    </div>
+    <h3 class="font-bold text-sm text-slate-900 mb-1">Conversion Notice</h3>
+    <p id="conversion-error-msg" class="text-xs text-slate-600 mb-5 leading-relaxed">
+      Could not automatically reconstruct all whiteboard elements. You can retry with a different model or place the image directly onto the canvas.
+    </p>
+    <div class="space-y-2">
+      <button id="btn-error-retry" class="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shadow-xs flex items-center justify-center gap-2 transition active:scale-98 cursor-pointer">
+        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+        <span>Try Again</span>
+      </button>
+      <div class="grid grid-cols-2 gap-2">
+        <button id="btn-error-insert-as-image" class="py-2 px-3 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition active:scale-98 flex items-center justify-center gap-1.5 cursor-pointer">
+          <i data-lucide="image" class="w-3.5 h-3.5 text-slate-400"></i>
+          <span>Insert as Image</span>
+        </button>
+        <button id="btn-error-cancel" class="py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition active:scale-98 cursor-pointer">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 <div id="smart-toast" class="pointer-events-none fixed top-16 left-1/2 -translate-x-1/2 z-[9999] opacity-0 -translate-y-2 transition-all duration-300 flex items-center gap-2 px-4 py-2 bg-slate-900/90 text-white backdrop-blur-md shadow-2xl rounded-full text-xs font-medium border border-white/20">
   <span id="smart-toast-icon">✨</span>
   <span id="smart-toast-msg">Smart PNG</span>

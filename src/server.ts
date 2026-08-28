@@ -27,6 +27,7 @@ if (typeof (globalThis as unknown as { DOMMatrix?: unknown })["DOMMatrix"] === "
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
+import { convertWhiteboardImage } from "./server/image-converter";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -72,6 +73,42 @@ function isH3SwallowedErrorBody(body: string): boolean {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      const url = new URL(request.url);
+
+      if (url.pathname === "/api/convert-whiteboard-image" && request.method === "POST") {
+        try {
+          const body = (await request.json()) as {
+            imageBase64?: string;
+            mimeType?: string;
+            width?: number;
+            height?: number;
+          };
+          if (!body.imageBase64) {
+            return new Response(JSON.stringify({ error: "Missing imageBase64 in request body" }), {
+              status: 400,
+              headers: { "content-type": "application/json" },
+            });
+          }
+          const result = await convertWhiteboardImage({
+            imageBase64: body.imageBase64,
+            mimeType: body.mimeType || "image/png",
+            width: Number(body.width) || 1200,
+            height: Number(body.height) || 800,
+          });
+          return new Response(JSON.stringify(result), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        } catch (apiErr) {
+          const errMsg = apiErr instanceof Error ? apiErr.message : "Image conversion failed";
+          console.error("Image conversion API error:", apiErr);
+          return new Response(JSON.stringify({ error: errMsg }), {
+            status: 500,
+            headers: { "content-type": "application/json" },
+          });
+        }
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);
