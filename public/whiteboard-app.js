@@ -25,6 +25,18 @@ lucideCreateIcons();
 const ctx=canvas.getContext("2d"),container=document.getElementById("canvas-container"),eraserCursor=document.getElementById("eraser-cursor"),laserCursor=document.getElementById("laser-cursor"),drawCursor=document.getElementById("draw-cursor");
 if(!ctx||!container){ EventTarget.prototype.addEventListener = __origAdd; return; }
 
+let overlayCanvas = document.getElementById("board-overlay");
+if(!overlayCanvas && container){
+  overlayCanvas = document.createElement("canvas");
+  overlayCanvas.id = "board-overlay";
+  overlayCanvas.style.position = "absolute";
+  overlayCanvas.style.top = "0";
+  overlayCanvas.style.left = "0";
+  overlayCanvas.style.pointerEvents = "none";
+  container.appendChild(overlayCanvas);
+}
+const overlayCtx = overlayCanvas ? overlayCanvas.getContext("2d") : null;
+
 const THEME_COLORS=[
   {name:"Dark Slate",hex:"#232528"},
   {name:"Slate Grey",hex:"#4A5568"},
@@ -142,10 +154,11 @@ const PERSISTENT_TOOLS=["pen","highlighter","vanishing","eraser","hand","line","
 
 function genId(){return Math.random().toString(36).slice(2)+Date.now().toString(36)}
 function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
-function roundRectPath(x,y,w,h,r){
-  if(typeof ctx.roundRect==="function"){ctx.beginPath();ctx.roundRect(x,y,w,h,r);return;}
-  ctx.beginPath();
-  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+function roundRectPath(x,y,w,h,r,targetCtx=ctx){
+  const c = targetCtx || ctx;
+  if(typeof c.roundRect==="function"){c.beginPath();c.roundRect(x,y,w,h,r);return;}
+  c.beginPath();
+  c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath();
 }
 function getReadableSize(){const z=clamp(state.camera.zoom,0.15,4);const world=18 / z;return clamp(world,10,72)}
 function serializeElements(){return state.elements.map(e=>{const {img,_handles,_fadeInterval,fireStarted,opacity,_fresh,...r}=e;if(r.type==="vanishing")return {...r,opacity:1};return {...r};})}
@@ -790,7 +803,18 @@ function applyBgColor(c){
   updateCursor();
   saveBoards();
 }
-function resizeCanvas(){const dpr=window.devicePixelRatio||1; canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr; canvas.style.width=innerWidth+"px"; canvas.style.height=innerHeight+"px"; ctx.setTransform(dpr,0,0,dpr,0,0); render();}
+function resizeCanvas(){
+  const dpr=window.devicePixelRatio||1;
+  canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr;
+  canvas.style.width=innerWidth+"px"; canvas.style.height=innerHeight+"px";
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  if(overlayCanvas && overlayCtx){
+    overlayCanvas.width=innerWidth*dpr; overlayCanvas.height=innerHeight*dpr;
+    overlayCanvas.style.width=innerWidth+"px"; overlayCanvas.style.height=innerHeight+"px";
+    overlayCtx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  render();
+}
 addEventListener("resize",resizeCanvas,__hbSig);
 function toWorld(x,y){return{x:(x-state.camera.x)/state.camera.zoom,y:(y-state.camera.y)/state.camera.zoom}}
 function toScreen(x,y){return{x:x*state.camera.zoom+state.camera.x,y:y*state.camera.zoom+state.camera.y}}
@@ -1058,33 +1082,68 @@ _textMeasure.setAttribute("aria-hidden","true");
 _textMeasure.style.cssText="position:absolute;left:-9999px;top:0;white-space:pre;visibility:hidden;pointer-events:none;line-height:1.25;padding:0;margin:0;border:0;";
 document.body.appendChild(_textMeasure);
 function isManualWidthText(el){
-  return !!(el && el.type==="text" && el.widthMode==="manual" && typeof el.boxWidth==="number" && el.boxWidth>0);
+  return !!(el && el.type==="text" && (el.widthMode==="manual" || (typeof el.boxWidth==="number" && el.boxWidth>0)));
 }
 function textLines(el){
   const raw = el.isPlaceholder ? "Type here" : String(el.text||"");
   if(!isManualWidthText(el)) return raw.split("\n");
-  const maxW = Math.max(8, el.boxWidth);
-  ctx.save(); ctx.font=textFont(el);
-  const out=[];
-  raw.split("\n").forEach(par=>{
-    if(!par){out.push("");return}
-    let line="";
-    par.split(/(\s+)/).forEach(tok=>{
-      const test=line+tok;
-      if(ctx.measureText(test).width>maxW && line.trim()){ out.push(line.replace(/\s+$/,"")); line=tok.replace(/^\s+/,""); }
-      else line=test;
-    });
-    out.push(line);
-  });
+  const maxW = Math.max(8, el.boxWidth || el.w || 24);
+  ctx.save();
+  ctx.font = textFont(el);
+  const out = [];
+  const pars = raw.split("\n");
+  for(let p = 0; p < pars.length; p++){
+    const par = pars[p];
+    if(!par){
+      out.push("");
+      continue;
+    }
+    const tokens = par.split(/(\s+)/);
+    let curLine = "";
+    for(let t = 0; t < tokens.length; t++){
+      const tok = tokens[t];
+      if(!tok) continue;
+      const test = curLine + tok;
+      if(ctx.measureText(test).width <= maxW){
+        curLine = test;
+      } else {
+        if(curLine.trim().length > 0){
+          out.push(curLine.replace(/\s+$/, ""));
+          curLine = "";
+        }
+        const cleanTok = tok.replace(/^\s+/, "");
+        if(!cleanTok) continue;
+        if(ctx.measureText(cleanTok).width <= maxW){
+          curLine = cleanTok;
+        } else {
+          let chunk = "";
+          for(let i = 0; i < cleanTok.length; i++){
+            const ch = cleanTok[i];
+            if(ctx.measureText(chunk + ch).width > maxW && chunk.length > 0){
+              out.push(chunk);
+              chunk = ch;
+            } else {
+              chunk += ch;
+            }
+          }
+          curLine = chunk;
+        }
+      }
+    }
+    if(curLine !== "") out.push(curLine);
+  }
   ctx.restore();
-  return out.length?out:[""];
+  return out.length ? out : [""];
 }
 function fitTextElement(el){
   if(!el || el.type!=="text") return;
   const size=el.size||18;
   if(isManualWidthText(el)){
-    el.w = Math.max(8, el.boxWidth);
-    el.h = Math.max(size*1.25, textLines(el).length*size*1.25);
+    const bw = Math.max(8, el.boxWidth || el.w || 24);
+    el.w = bw;
+    el.boxWidth = bw;
+    const lines = textLines(el);
+    el.h = Math.max(size*1.25, lines.length*size*1.25);
     return;
   }
   const text=String(el.text||"");
@@ -1325,20 +1384,339 @@ function timerRemaining(el){
   const left = Math.max(0, Math.round(((el.endAt || Date.now()) - Date.now()) / 1000));
   return left;
 }
-function drawAlignmentGuides(){
+function drawAlignmentGuides(targetCtx=ctx){
   if(!state.alignmentGuides || !state.alignmentGuides.length) return;
+  const c = targetCtx || ctx;
   const z = Math.max(0.05, state.camera.zoom);
-  ctx.save();
-  ctx.strokeStyle = "#3b82f6";
-  ctx.lineWidth = 1.25 / z;
-  ctx.setLineDash([4 / z, 4 / z]);
+  c.save();
   state.alignmentGuides.forEach(g => {
-    ctx.beginPath();
-    ctx.moveTo(g.x1, g.y1);
-    ctx.lineTo(g.x2, g.y2);
-    ctx.stroke();
+    if(g.type === "equal_spacing"){
+      c.strokeStyle = "#3b82f6";
+      c.fillStyle = "#3b82f6";
+      c.lineWidth = 1.25 / z;
+      c.setLineDash([]);
+      const tickSize = 4 / z;
+      if(g.axis === "x"){
+        (g.ranges || []).forEach(r => {
+          if(r.x2 <= r.x1) return;
+          c.beginPath();
+          c.moveTo(r.x1, g.y);
+          c.lineTo(r.x2, g.y);
+          c.moveTo(r.x1, g.y - tickSize);
+          c.lineTo(r.x1, g.y + tickSize);
+          c.moveTo(r.x2, g.y - tickSize);
+          c.lineTo(r.x2, g.y + tickSize);
+          c.stroke();
+
+          // Centered indicator dot
+          const mx = (r.x1 + r.x2) / 2;
+          c.beginPath();
+          c.arc(mx, g.y, 2.5 / z, 0, Math.PI * 2);
+          c.fill();
+        });
+      } else {
+        (g.ranges || []).forEach(r => {
+          if(r.y2 <= r.y1) return;
+          c.beginPath();
+          c.moveTo(g.x, r.y1);
+          c.lineTo(g.x, r.y2);
+          c.moveTo(g.x - tickSize, r.y1);
+          c.lineTo(g.x + tickSize, r.y1);
+          c.moveTo(g.x - tickSize, r.y2);
+          c.lineTo(g.x + tickSize, r.y2);
+          c.stroke();
+
+          // Centered indicator dot
+          const my = (r.y1 + r.y2) / 2;
+          c.beginPath();
+          c.arc(g.x, my, 2.5 / z, 0, Math.PI * 2);
+          c.fill();
+        });
+      }
+    } else {
+      c.strokeStyle = "#3b82f6";
+      c.lineWidth = 1.25 / z;
+      c.setLineDash([4 / z, 4 / z]);
+      c.beginPath();
+      c.moveTo(g.x1, g.y1);
+      c.lineTo(g.x2, g.y2);
+      c.stroke();
+    }
   });
-  ctx.restore();
+  c.restore();
+}
+
+function drawSnapAnchorIndicator(targetCtx=ctx){
+  if(!state.activeSnapAnchor) return;
+  const c = targetCtx || ctx;
+  const z = Math.max(0.05, state.camera.zoom);
+  const a = state.activeSnapAnchor;
+  c.save();
+  c.fillStyle = "#2563eb";
+  c.strokeStyle = "#ffffff";
+  c.lineWidth = 1.5 / z;
+  c.beginPath();
+  c.arc(a.x, a.y, 4.5 / z, 0, Math.PI * 2);
+  c.fill();
+  c.stroke();
+  c.restore();
+}
+
+function getElementAnchors(el){
+  if(!el) return [];
+  const b = getBounds(el);
+  const cx = b.x + b.w / 2;
+  const cy = b.y + b.h / 2;
+  let anchors = [
+    { x: b.x, y: cy, side: "left" },
+    { x: b.x + b.w, y: cy, side: "right" },
+    { x: cx, y: b.y, side: "top" },
+    { x: cx, y: b.y + b.h, side: "bottom" },
+    { x: cx, y: cy, side: "center" }
+  ];
+  if(el.rotation){
+    anchors = anchors.map(a => {
+      const rot = rotatePoint(a.x, a.y, cx, cy, el.rotation);
+      return { ...a, x: rot.x, y: rot.y };
+    });
+  }
+  return anchors;
+}
+
+function findNearestAnchor(wp, excludeId = null){
+  const tol = 16 / Math.max(0.05, state.camera.zoom);
+  let best = null, bestD = Infinity;
+  for(let i = 0; i < state.elements.length; i++){
+    const el = state.elements[i];
+    if(el.id === excludeId || el.locked || LINE_TYPES.includes(el.type)) continue;
+    const anchors = getElementAnchors(el);
+    for(let j = 0; j < anchors.length; j++){
+      const a = anchors[j];
+      const d = Math.hypot(wp.x - a.x, wp.y - a.y);
+      if(d < tol && d < bestD){
+        bestD = d;
+        best = { ...a, elId: el.id };
+      }
+    }
+  }
+  return best;
+}
+
+function computeAlignmentAndSnapping(testBounds, startBounds, dx, dy, excludeIds = [], allowShift = false){
+  const guides = [];
+  if(allowShift) return { dx, dy, guides };
+  
+  const testX = startBounds.x + dx;
+  const testY = startBounds.y + dy;
+  const testW = startBounds.w;
+  const testH = startBounds.h;
+  const SNAP_DIST = 6 / Math.max(0.05, state.camera.zoom);
+  
+  let bestSnapX = null, bestDistX = SNAP_DIST;
+  let bestSnapY = null, bestDistY = SNAP_DIST;
+  let guideX = null, guideY = null;
+  let spacingGuideX = null, spacingGuideY = null;
+
+  const curLeft = testX, curRight = testX + testW, curCenterX = testX + testW / 2;
+  const curTop = testY, curBottom = testY + testH, curCenterY = testY + testH / 2;
+
+  const otherBoxes = [];
+  for(let i = 0; i < state.elements.length; i++){
+    const other = state.elements[i];
+    if(excludeIds.includes(other.id) || other.locked) continue;
+    const ob = getBounds(other);
+    if(ob.w > 0 && ob.h > 0){
+      otherBoxes.push(ob);
+    }
+  }
+
+  for(let i = 0; i < otherBoxes.length; i++){
+    const ob = otherBoxes[i];
+    const oLeft = ob.x, oRight = ob.x + ob.w, oCenterX = ob.x + ob.w / 2;
+    const oTop = ob.y, oBottom = ob.y + ob.h, oCenterY = ob.y + ob.h / 2;
+
+    const xPairs = [
+      { cur: curLeft, target: oLeft, offset: 0 },
+      { cur: curRight, target: oRight, offset: testW },
+      { cur: curCenterX, target: oCenterX, offset: testW / 2 },
+      { cur: curLeft, target: oRight, offset: 0 },
+      { cur: curRight, target: oLeft, offset: testW }
+    ];
+    for(let j = 0; j < xPairs.length; j++){
+      const p = xPairs[j];
+      const diff = Math.abs(p.cur - p.target);
+      if(diff < bestDistX){
+        bestDistX = diff;
+        bestSnapX = p.target - p.offset;
+        guideX = { x1: p.target, y1: Math.min(testY, ob.y) - 24, x2: p.target, y2: Math.max(testY + testH, ob.y + ob.h) + 24 };
+      }
+    }
+
+    const yPairs = [
+      { cur: curTop, target: oTop, offset: 0 },
+      { cur: curBottom, target: oBottom, offset: testH },
+      { cur: curCenterY, target: oCenterY, offset: testH / 2 },
+      { cur: curTop, target: oBottom, offset: 0 },
+      { cur: curBottom, target: oTop, offset: testH }
+    ];
+    for(let j = 0; j < yPairs.length; j++){
+      const p = yPairs[j];
+      const diff = Math.abs(p.cur - p.target);
+      if(diff < bestDistY){
+        bestDistY = diff;
+        bestSnapY = p.target - p.offset;
+        guideY = { x1: Math.min(testX, ob.x) - 24, y1: p.target, x2: Math.max(testX + testW, ob.x + ob.w) + 24, y2: p.target };
+      }
+    }
+  }
+
+  // Equal Spacing Assistance for 3+ objects (Horizontal)
+  if(otherBoxes.length >= 2){
+    const sortedX = otherBoxes.slice().sort((a, b) => a.x - b.x);
+    for(let i = 0; i < sortedX.length - 1; i++){
+      const A = sortedX[i];
+      const B = sortedX[i + 1];
+      const gapAB = B.x - (A.x + A.w);
+      if(gapAB > 4){
+        // Position between A and B
+        const targetX_mid = A.x + A.w + (gapAB - testW) / 2;
+        const diff_mid = Math.abs(testX - targetX_mid);
+        if(diff_mid < bestDistX && gapAB > testW){
+          bestDistX = diff_mid;
+          bestSnapX = targetX_mid;
+          guideX = null;
+          const actualGap = (gapAB - testW) / 2;
+          const midY = (Math.min(testY, A.y, B.y) + Math.max(testY + testH, A.y + A.h, B.y + B.h)) / 2;
+          spacingGuideX = {
+            type: "equal_spacing",
+            axis: "x",
+            y: midY,
+            ranges: [
+              { x1: A.x + A.w, x2: targetX_mid, gap: actualGap },
+              { x1: targetX_mid + testW, x2: B.x, gap: actualGap }
+            ]
+          };
+        }
+        // Position after B (matching gapAB)
+        const targetX_after = B.x + B.w + gapAB;
+        const diff_after = Math.abs(testX - targetX_after);
+        if(diff_after < bestDistX){
+          bestDistX = diff_after;
+          bestSnapX = targetX_after;
+          guideX = null;
+          const midY = (Math.min(testY, A.y, B.y) + Math.max(testY + testH, A.y + A.h, B.y + B.h)) / 2;
+          spacingGuideX = {
+            type: "equal_spacing",
+            axis: "x",
+            y: midY,
+            ranges: [
+              { x1: A.x + A.w, x2: B.x, gap: gapAB },
+              { x1: B.x + B.w, x2: targetX_after, gap: gapAB }
+            ]
+          };
+        }
+        // Position before A (matching gapAB)
+        const targetX_before = A.x - gapAB - testW;
+        const diff_before = Math.abs(testX - targetX_before);
+        if(diff_before < bestDistX){
+          bestDistX = diff_before;
+          bestSnapX = targetX_before;
+          guideX = null;
+          const midY = (Math.min(testY, A.y, B.y) + Math.max(testY + testH, A.y + A.h, B.y + B.h)) / 2;
+          spacingGuideX = {
+            type: "equal_spacing",
+            axis: "x",
+            y: midY,
+            ranges: [
+              { x1: targetX_before + testW, x2: A.x, gap: gapAB },
+              { x1: A.x + A.w, x2: B.x, gap: gapAB }
+            ]
+          };
+        }
+      }
+    }
+
+    // Equal Spacing Assistance for 3+ objects (Vertical)
+    const sortedY = otherBoxes.slice().sort((a, b) => a.y - b.y);
+    for(let i = 0; i < sortedY.length - 1; i++){
+      const A = sortedY[i];
+      const B = sortedY[i + 1];
+      const gapAB = B.y - (A.y + A.h);
+      if(gapAB > 4){
+        // Position between A and B
+        const targetY_mid = A.y + A.h + (gapAB - testH) / 2;
+        const diff_mid = Math.abs(testY - targetY_mid);
+        if(diff_mid < bestDistY && gapAB > testH){
+          bestDistY = diff_mid;
+          bestSnapY = targetY_mid;
+          guideY = null;
+          const actualGap = (gapAB - testH) / 2;
+          const midX = (Math.min(testX, A.x, B.x) + Math.max(testX + testW, A.x + A.w, B.x + B.w)) / 2;
+          spacingGuideY = {
+            type: "equal_spacing",
+            axis: "y",
+            x: midX,
+            ranges: [
+              { y1: A.y + A.h, y2: targetY_mid, gap: actualGap },
+              { y1: targetY_mid + testH, y2: B.y, gap: actualGap }
+            ]
+          };
+        }
+        // Position after B (matching gapAB)
+        const targetY_after = B.y + B.h + gapAB;
+        const diff_after = Math.abs(testY - targetY_after);
+        if(diff_after < bestDistY){
+          bestDistY = diff_after;
+          bestSnapY = targetY_after;
+          guideY = null;
+          const midX = (Math.min(testX, A.x, B.x) + Math.max(testX + testW, A.x + A.w, B.x + B.w)) / 2;
+          spacingGuideY = {
+            type: "equal_spacing",
+            axis: "y",
+            x: midX,
+            ranges: [
+              { y1: A.y + A.h, y2: B.y, gap: gapAB },
+              { y1: B.y + B.h, y2: targetY_after, gap: gapAB }
+            ]
+          };
+        }
+        // Position before A (matching gapAB)
+        const targetY_before = A.y - gapAB - testH;
+        const diff_before = Math.abs(testY - targetY_before);
+        if(diff_before < bestDistY){
+          bestDistY = diff_before;
+          bestSnapY = targetY_before;
+          guideY = null;
+          const midX = (Math.min(testX, A.x, B.x) + Math.max(testX + testW, A.x + A.w, B.x + B.w)) / 2;
+          spacingGuideY = {
+            type: "equal_spacing",
+            axis: "y",
+            x: midX,
+            ranges: [
+              { y1: targetY_before + testH, y2: A.y, gap: gapAB },
+              { y1: A.y + A.h, y2: B.y, gap: gapAB }
+            ]
+          };
+        }
+      }
+    }
+  }
+
+  let finalDx = dx;
+  let finalDy = dy;
+
+  if(bestSnapX !== null){
+    finalDx = bestSnapX - startBounds.x;
+    if(guideX) guides.push(guideX);
+    if(spacingGuideX) guides.push(spacingGuideX);
+  }
+  if(bestSnapY !== null){
+    finalDy = bestSnapY - startBounds.y;
+    if(guideY) guides.push(guideY);
+    if(spacingGuideY) guides.push(spacingGuideY);
+  }
+
+  return { dx: finalDx, dy: finalDy, guides };
 }
 function drawCompassGuide(el){
   const r=Math.hypot(el.w||0, el.h||0);
@@ -1382,29 +1760,30 @@ function drawSmoothStrokePath(c, pts){
   c.stroke();
 }
 
-function drawElement(el){
-  ctx.save();
+function drawElement(el, targetCtx=ctx){
+  const c = targetCtx || ctx;
+  c.save();
   const b=getBounds(el),cx=b.x+b.w/2,cy=b.y+b.h/2;
-  if(el.rotation){ctx.translate(cx,cy);ctx.rotate(el.rotation*Math.PI/180);ctx.translate(-cx,-cy);}
-  ctx.strokeStyle=el.color||"#1E1E1E";ctx.fillStyle=el.color||"#1E1E1E";ctx.lineWidth=el.width||2;ctx.lineCap="round";ctx.lineJoin="round";
+  if(el.rotation){c.translate(cx,cy);c.rotate(el.rotation*Math.PI/180);c.translate(-cx,-cy);}
+  c.strokeStyle=el.color||"#1E1E1E";c.fillStyle=el.color||"#1E1E1E";c.lineWidth=el.width||2;c.lineCap="round";c.lineJoin="round";
   if(STROKE_TYPES.includes(el.type)){
     const style=el.penStyle!=null?el.penStyle:0;
     if(el.type==="highlighter"){
       const hs=el.highlighterStyle||0;
-      if(hs===1){ctx.globalAlpha=.45;ctx.lineWidth=(el.width||15)*1.15;}
-      else if(hs===2){ctx.globalAlpha=.25;ctx.shadowColor=el.color||"#000";ctx.shadowBlur=10;}
-      else {ctx.globalAlpha=.35;}
-      drawSmoothStrokePath(ctx, el.points);
+      if(hs===1){c.globalAlpha=.45;c.lineWidth=(el.width||15)*1.15;}
+      else if(hs===2){c.globalAlpha=.25;c.shadowColor=el.color||"#000";c.shadowBlur=10;}
+      else {c.globalAlpha=.35;}
+      drawSmoothStrokePath(c, el.points);
     } else if(el.type==="vanishing"){
-      ctx.globalAlpha=el.opacity!=null?el.opacity:1;
+      c.globalAlpha=el.opacity!=null?el.opacity:1;
       const mode=el.vanishMode||state.vanishMode||"comet";
       const pts=el.points; const n=pts ? pts.length : 0;
       const cut=el.cometCut||0;
       if(n === 1){
         const core=el.color||"#E52B50";
-        ctx.fillStyle=core; ctx.shadowColor=core; ctx.shadowBlur=12;
-        ctx.beginPath(); ctx.arc(pts[0].x, pts[0].y, Math.max(1, (el.width||4)/2), 0, Math.PI*2); ctx.fill();
-        ctx.shadowBlur=0;
+        c.fillStyle=core; c.shadowColor=core; c.shadowBlur=12;
+        c.beginPath(); c.arc(pts[0].x, pts[0].y, Math.max(1, (el.width||4)/2), 0, Math.PI*2); c.fill();
+        c.shadowBlur=0;
       } else if(n > 1){
         if(mode==="comet"){
           const core=el.color||"#E52B50";
@@ -1416,11 +1795,11 @@ function drawElement(el){
             const p_ctrl = p1;
             const p_end = (i===n-1) ? p1 : {x:(p1.x+pts[i+1].x)/2, y:(p1.y+pts[i+1].y)/2};
             const along=(t-cut)/Math.max(0.001,1-cut);
-            ctx.strokeStyle=core; ctx.shadowColor=core; ctx.shadowBlur=14*along;
-            ctx.lineWidth=(el.width||4)*(0.3+1.4*along); ctx.globalAlpha=(el.opacity!=null?el.opacity:1)*Math.max(0.15,along);
-            ctx.beginPath();ctx.moveTo(p_start.x,p_start.y);ctx.quadraticCurveTo(p_ctrl.x,p_ctrl.y,p_end.x,p_end.y);ctx.stroke();
+            c.strokeStyle=core; c.shadowColor=core; c.shadowBlur=14*along;
+            c.lineWidth=(el.width||4)*(0.3+1.4*along); c.globalAlpha=(el.opacity!=null?el.opacity:1)*Math.max(0.15,along);
+            c.beginPath();c.moveTo(p_start.x,p_start.y);c.quadraticCurveTo(p_ctrl.x,p_ctrl.y,p_end.x,p_end.y);c.stroke();
           }
-          ctx.shadowBlur=0;
+          c.shadowBlur=0;
         } else if(mode==="ember"){
           const base=el.color||"#FF6B00";
           const alpha=el.opacity!=null?el.opacity:1;
@@ -1433,30 +1812,30 @@ function drawElement(el){
             const p_ctrl = p1;
             const p_end = (i===n-1) ? p1 : {x:(p1.x+pts[i+1].x)/2, y:(p1.y+pts[i+1].y)/2};
             if(heat>0.05){
-              ctx.strokeStyle=`rgb(255,${Math.round(90+140*(1-heat))},${Math.round(30+60*(1-heat))})`;
-              ctx.shadowColor="#f97316"; ctx.shadowBlur=6+22*heat;
-              ctx.lineWidth=(el.width||4)*(1+0.65*heat);
-              ctx.globalAlpha=alpha;
+              c.strokeStyle=`rgb(255,${Math.round(90+140*(1-heat))},${Math.round(30+60*(1-heat))})`;
+              c.shadowColor="#f97316"; c.shadowBlur=6+22*heat;
+              c.lineWidth=(el.width||4)*(1+0.65*heat);
+              c.globalAlpha=alpha;
             } else {
-              ctx.strokeStyle=base; ctx.shadowColor="rgba(120,53,15,0.6)"; ctx.shadowBlur=3;
-              ctx.lineWidth=el.width||4; ctx.globalAlpha=alpha*0.92;
+              c.strokeStyle=base; c.shadowColor="rgba(120,53,15,0.6)"; c.shadowBlur=3;
+              c.lineWidth=el.width||4; c.globalAlpha=alpha*0.92;
             }
-            ctx.beginPath();ctx.moveTo(p_start.x,p_start.y);ctx.quadraticCurveTo(p_ctrl.x,p_ctrl.y,p_end.x,p_end.y);ctx.stroke();
+            c.beginPath();c.moveTo(p_start.x,p_start.y);c.quadraticCurveTo(p_ctrl.x,p_ctrl.y,p_end.x,p_end.y);c.stroke();
           }
-          ctx.shadowBlur=0;
+          c.shadowBlur=0;
         } else {
-          ctx.shadowBlur=6; ctx.shadowColor=el.color||"#334155";
+          c.shadowBlur=6; c.shadowColor=el.color||"#334155";
           for(let i=1;i<n;i++){
             const p0=pts[i-1], p1=pts[i];
             const p_start = (i===1) ? p0 : {x:(p0.x+p1.x)/2, y:(p0.y+p1.y)/2};
             const p_ctrl = p1;
             const p_end = (i===n-1) ? p1 : {x:(p1.x+pts[i+1].x)/2, y:(p1.y+pts[i+1].y)/2};
             const nse=((i*17)%10)/10;
-            ctx.globalAlpha=(el.opacity!=null?el.opacity:1)*(0.45+0.55*nse)*(el.inkMul!=null?el.inkMul:1);
-            ctx.lineWidth=(el.width||4)*(0.7+nse*0.6);
-            ctx.beginPath();ctx.moveTo(p_start.x,p_start.y);ctx.quadraticCurveTo(p_ctrl.x,p_ctrl.y,p_end.x,p_end.y);ctx.stroke();
+            c.globalAlpha=(el.opacity!=null?el.opacity:1)*(0.45+0.55*nse)*(el.inkMul!=null?el.inkMul:1);
+            c.lineWidth=(el.width||4)*(0.7+nse*0.6);
+            c.beginPath();c.moveTo(p_start.x,p_start.y);c.quadraticCurveTo(p_ctrl.x,p_ctrl.y,p_end.x,p_end.y);c.stroke();
           }
-          ctx.shadowBlur=0;
+          c.shadowBlur=0;
         }
       }
     } else if(el.points&&el.points.length>=1){
@@ -1465,101 +1844,101 @@ function drawElement(el){
         if(el.type==="pen" && style===2){
           const z=Math.max(0.05,state.camera.zoom);
           const core=el.color||"#00A86B";
-          ctx.shadowColor=core; ctx.shadowBlur=18/z;
-          ctx.fillStyle=core; ctx.beginPath(); ctx.arc(el.points[0].x, el.points[0].y, dotR*1.5, 0, Math.PI*2); ctx.fill();
-          ctx.fillStyle="#ffffff"; ctx.shadowBlur=8/z;
-          ctx.beginPath(); ctx.arc(el.points[0].x, el.points[0].y, dotR*0.7, 0, Math.PI*2); ctx.fill();
-          ctx.shadowBlur=0;
+          c.shadowColor=core; c.shadowBlur=18/z;
+          c.fillStyle=core; c.beginPath(); c.arc(el.points[0].x, el.points[0].y, dotR*1.5, 0, Math.PI*2); c.fill();
+          c.fillStyle="#ffffff"; c.shadowBlur=8/z;
+          c.beginPath(); c.arc(el.points[0].x, el.points[0].y, dotR*0.7, 0, Math.PI*2); c.fill();
+          c.shadowBlur=0;
         } else {
-          ctx.beginPath(); ctx.arc(el.points[0].x, el.points[0].y, dotR, 0, Math.PI*2); ctx.fill();
+          c.beginPath(); c.arc(el.points[0].x, el.points[0].y, dotR, 0, Math.PI*2); c.fill();
         }
       } else if(el.type==="pen"&&style===0){
-        ctx.lineWidth=(el.width||4)*0.55;
-        drawSmoothStrokePath(ctx, el.points);
+        c.lineWidth=(el.width||4)*0.55;
+        drawSmoothStrokePath(c, el.points);
       } else if(el.type==="pen"&&style===1){
         for(let i=1;i<el.points.length;i++){
           const p0=el.points[i-1],p1=el.points[i];
           const ang=Math.atan2(p1.y-p0.y,p1.x-p0.x);
-          ctx.lineWidth=(el.width||4)*(0.35+Math.abs(Math.sin(ang))*1.35);
+          c.lineWidth=(el.width||4)*(0.35+Math.abs(Math.sin(ang))*1.35);
           const p_start = (i===1)?p0:{x:(p0.x+p1.x)/2, y:(p0.y+p1.y)/2};
           const p_ctrl = p1;
           const p_end = (i===el.points.length-1)?p1:{x:(p1.x+el.points[i+1].x)/2, y:(p1.y+el.points[i+1].y)/2};
-          ctx.beginPath();ctx.moveTo(p_start.x,p_start.y);ctx.quadraticCurveTo(p_ctrl.x,p_ctrl.y,p_end.x,p_end.y);ctx.stroke();
+          c.beginPath();c.moveTo(p_start.x,p_start.y);c.quadraticCurveTo(p_ctrl.x,p_ctrl.y,p_end.x,p_end.y);c.stroke();
         }
       } else if(el.type==="pen"&&style===2){
         const z=Math.max(0.05,state.camera.zoom);
         const core=el.color||"#00A86B";
-        ctx.shadowColor=core; ctx.shadowBlur=18/z;
-        ctx.strokeStyle=core; ctx.globalAlpha=0.75; ctx.lineWidth=(el.width||4)*1.85;
-        drawSmoothStrokePath(ctx, el.points);
-        ctx.globalAlpha=1; ctx.shadowBlur=8/z; ctx.lineWidth=(el.width||4)*0.65; ctx.strokeStyle="#ffffff";
-        drawSmoothStrokePath(ctx, el.points);
-        ctx.shadowBlur=0;
+        c.shadowColor=core; c.shadowBlur=18/z;
+        c.strokeStyle=core; c.globalAlpha=0.75; c.lineWidth=(el.width||4)*1.85;
+        drawSmoothStrokePath(c, el.points);
+        c.globalAlpha=1; c.shadowBlur=8/z; c.lineWidth=(el.width||4)*0.65; c.strokeStyle="#ffffff";
+        drawSmoothStrokePath(c, el.points);
+        c.shadowBlur=0;
       } else if(el.type==="pen"&&style===3){
-        ctx.setLineDash(dashPattern(el));
-        drawSmoothStrokePath(ctx, el.points);
-        ctx.setLineDash([]);
+        c.setLineDash(dashPattern(el));
+        drawSmoothStrokePath(c, el.points);
+        c.setLineDash([]);
       } else {
-        drawSmoothStrokePath(ctx, el.points);
+        drawSmoothStrokePath(c, el.points);
       }
     }
-    ctx.shadowBlur=0;ctx.globalAlpha=1;
-  }else if(el.type==="rect"){if(el.fill)ctx.fillRect(el.x,el.y,el.w,el.h);else ctx.strokeRect(el.x,el.y,el.w,el.h)}
-  else if(el.type==="roundRect"){const r=Math.min(12,Math.abs(el.w)/4,Math.abs(el.h)/4);ctx.beginPath();ctx.roundRect(el.x,el.y,el.w,el.h,r); if(el.fill)ctx.fill();else ctx.stroke();}
-  else if(el.type==="circle"){ctx.beginPath();ctx.ellipse(el.x+el.w/2,el.y+el.h/2,Math.abs(el.w/2),Math.abs(el.h/2),0,0,Math.PI*2);if(el.fill)ctx.fill();else ctx.stroke()}
-  else if(el.type==="ellipse"){ctx.beginPath();ctx.ellipse(el.x+el.w/2,el.y+el.h/2,Math.abs(el.w/2),Math.abs(el.h/2),0,0,Math.PI*2);if(el.fill)ctx.fill();else ctx.stroke()}
-  else if(el.type==="triangle"){ctx.beginPath();ctx.moveTo(el.x+el.w/2,el.y);ctx.lineTo(el.x,el.y+el.h);ctx.lineTo(el.x+el.w,el.y+el.h);ctx.closePath();if(el.fill)ctx.fill();else ctx.stroke()}
-  else if(el.type==="diamond"){ctx.beginPath();ctx.moveTo(el.x+el.w/2,el.y);ctx.lineTo(el.x+el.w,el.y+el.h/2);ctx.lineTo(el.x+el.w/2,el.y+el.h);ctx.lineTo(el.x,el.y+el.h/2);ctx.closePath();if(el.fill)ctx.fill();else ctx.stroke()}
-  else if(el.type==="star"){const r=Math.min(Math.abs(el.w),Math.abs(el.h))/2;drawStar(el.x+el.w/2,el.y+el.h/2,r,r*0.45,5);if(el.fill)ctx.fill();else ctx.stroke()}
-  else if(el.type==="hexagon"){drawHexagon(el.x,el.y,el.w,el.h);if(el.fill)ctx.fill();else ctx.stroke()}
-  else if(el.type==="heart"){drawHeart(el.x,el.y,el.w,el.h);if(el.fill)ctx.fill();else ctx.stroke()}
+    c.shadowBlur=0;c.globalAlpha=1;
+  }else if(el.type==="rect"){if(el.fill)c.fillRect(el.x,el.y,el.w,el.h);else c.strokeRect(el.x,el.y,el.w,el.h)}
+  else if(el.type==="roundRect"){const r=Math.min(12,Math.abs(el.w)/4,Math.abs(el.h)/4);c.beginPath();c.roundRect(el.x,el.y,el.w,el.h,r); if(el.fill)c.fill();else c.stroke();}
+  else if(el.type==="circle"){c.beginPath();c.ellipse(el.x+el.w/2,el.y+el.h/2,Math.abs(el.w/2),Math.abs(el.h/2),0,0,Math.PI*2);if(el.fill)c.fill();else c.stroke()}
+  else if(el.type==="ellipse"){c.beginPath();c.ellipse(el.x+el.w/2,el.y+el.h/2,Math.abs(el.w/2),Math.abs(el.h/2),0,0,Math.PI*2);if(el.fill)c.fill();else c.stroke()}
+  else if(el.type==="triangle"){c.beginPath();c.moveTo(el.x+el.w/2,el.y);c.lineTo(el.x,el.y+el.h);c.lineTo(el.x+el.w,el.y+el.h);c.closePath();if(el.fill)c.fill();else c.stroke()}
+  else if(el.type==="diamond"){c.beginPath();c.moveTo(el.x+el.w/2,el.y);c.lineTo(el.x+el.w,el.y+el.h/2);c.lineTo(el.x+el.w/2,el.y+el.h);c.lineTo(el.x,el.y+el.h/2);c.closePath();if(el.fill)c.fill();else c.stroke()}
+  else if(el.type==="star"){const r=Math.min(Math.abs(el.w),Math.abs(el.h))/2;drawStar(el.x+el.w/2,el.y+el.h/2,r,r*0.45,5);if(el.fill)c.fill();else c.stroke()}
+  else if(el.type==="hexagon"){drawHexagon(el.x,el.y,el.w,el.h);if(el.fill)c.fill();else c.stroke()}
+  else if(el.type==="heart"){drawHeart(el.x,el.y,el.w,el.h);if(el.fill)c.fill();else c.stroke()}
   else if(el.type==="ruler"){drawRuler(el)}
   else if(el.type==="protractor"){drawProtractor(el)}
   else if(el.type==="axes"){drawAxes(el)}
   else if(el.type==="timer"){drawTimer(el)}
   else if(el.type==="compassGuide"){drawCompassGuide(el)}
   else if(el.type==="sticky"){
-    ctx.save();
-    ctx.shadowColor="rgba(15,23,42,0.20)"; ctx.shadowBlur=22; ctx.shadowOffsetY=10;
-    ctx.fillStyle=el.bg||"#fef08a"; roundRectPath(el.x,el.y,el.w,el.h,14); ctx.fill();
-    ctx.restore();
-    ctx.save();
-    const gg=ctx.createLinearGradient(el.x,el.y,el.x,el.y+el.h);
+    c.save();
+    c.shadowColor="rgba(15,23,42,0.20)"; c.shadowBlur=22; c.shadowOffsetY=10;
+    c.fillStyle=el.bg||"#fef08a"; roundRectPath(el.x,el.y,el.w,el.h,14,c); c.fill();
+    c.restore();
+    c.save();
+    const gg=c.createLinearGradient(el.x,el.y,el.x,el.y+el.h);
     gg.addColorStop(0,"rgba(255,255,255,0.55)"); gg.addColorStop(0.45,"rgba(255,255,255,0.06)"); gg.addColorStop(1,"rgba(15,23,42,0.06)");
-    ctx.fillStyle=gg; roundRectPath(el.x,el.y,el.w,el.h,14); ctx.fill();
-    ctx.strokeStyle="rgba(255,255,255,0.75)"; ctx.lineWidth=1; roundRectPath(el.x+0.5,el.y+0.5,el.w-1,el.h-1,14); ctx.stroke();
-    ctx.restore();
-    if(state.inlineEditingId===el.id){ctx.restore();return;}
+    c.fillStyle=gg; roundRectPath(el.x,el.y,el.w,el.h,14,c); c.fill();
+    c.strokeStyle="rgba(255,255,255,0.75)"; c.lineWidth=1; roundRectPath(el.x+0.5,el.y+0.5,el.w-1,el.h-1,14,c); c.stroke();
+    c.restore();
+    if(state.inlineEditingId===el.id){c.restore();return;}
     const lines=stickyLines(el);
     const lh=(el.size||16)*1.35;
     const maxScroll=stickyMaxScroll(el);
     if(el.scroll==null) el.scroll=0;
     el.scroll=clamp(el.scroll,0,maxScroll);
-    ctx.save();
-    roundRectPath(el.x,el.y,el.w,el.h,14); ctx.clip();
-    ctx.fillStyle=el.isPlaceholder?"rgba(100,116,139,0.75)":(el.color||"#422006");
-    ctx.font=stickyFont(el); ctx.textBaseline="top";
-    if(el.isPlaceholder){ ctx.fillText("Type here", el.x+STICKY_PAD, el.y+STICKY_PAD); }
+    c.save();
+    roundRectPath(el.x,el.y,el.w,el.h,14,c); c.clip();
+    c.fillStyle=el.isPlaceholder?"rgba(100,116,139,0.75)":(el.color||"#422006");
+    c.font=stickyFont(el); c.textBaseline="top";
+    if(el.isPlaceholder){ c.fillText("Type here", el.x+STICKY_PAD, el.y+STICKY_PAD); }
     else lines.forEach((line,i)=>{
       const yy=el.y+STICKY_PAD+i*lh-el.scroll;
       if(yy>el.y+el.h||yy+lh<el.y) return;
-      ctx.fillText(line,el.x+STICKY_PAD,yy);
-      if(el.underline) ctx.fillRect(el.x+STICKY_PAD,yy+(el.size||16)+1,ctx.measureText(line).width,1);
+      c.fillText(line,el.x+STICKY_PAD,yy);
+      if(el.underline) c.fillRect(el.x+STICKY_PAD,yy+(el.size||16)+1,c.measureText(line).width,1);
     });
     if(maxScroll>0.5){
       const trackH=el.h-16, barH=Math.max(18, trackH*(el.h/(el.h+maxScroll)));
       const t=maxScroll?el.scroll/maxScroll:0;
       const bx=el.x+el.w-7, by=el.y+8+t*(trackH-barH);
-      ctx.fillStyle="rgba(15,23,42,0.10)"; roundRectPath(bx,el.y+8,4,trackH,2); ctx.fill();
-      ctx.fillStyle="rgba(15,23,42,0.38)"; roundRectPath(bx,by,4,barH,2); ctx.fill();
+      c.fillStyle="rgba(15,23,42,0.10)"; roundRectPath(bx,el.y+8,4,trackH,2,c); c.fill();
+      c.fillStyle="rgba(15,23,42,0.38)"; roundRectPath(bx,by,4,barH,2,c); c.fill();
     }
-    ctx.restore();
+    c.restore();
   }
-  else if(LINE_TYPES.includes(el.type)){if(el.type==="dashed")ctx.setLineDash(dashPattern(el));ctx.beginPath();ctx.moveTo(el.x,el.y);ctx.lineTo(el.x+el.w,el.y+el.h);ctx.stroke();ctx.setLineDash([]); if(el.type==="arrow"||el.type==="doubleArrow"){const a=Math.atan2(el.h,el.w),hl=14;ctx.beginPath();ctx.moveTo(el.x+el.w,el.y+el.h);ctx.lineTo(el.x+el.w-hl*Math.cos(a-Math.PI/6),el.y+el.h-hl*Math.sin(a-Math.PI/6));ctx.moveTo(el.x+el.w,el.y+el.h);ctx.lineTo(el.x+el.w-hl*Math.cos(a+Math.PI/6),el.y+el.h-hl*Math.sin(a+Math.PI/6));ctx.stroke();} if(el.type==="doubleArrow"){const a=Math.atan2(el.h,el.w),hl=14;ctx.beginPath();ctx.moveTo(el.x,el.y);ctx.lineTo(el.x+hl*Math.cos(a-Math.PI/6),el.y+hl*Math.sin(a-Math.PI/6));ctx.moveTo(el.x,el.y);ctx.lineTo(el.x+hl*Math.cos(a+Math.PI/6),el.y+hl*Math.sin(a+Math.PI/6));ctx.stroke();}}
-  else if(el.type==="text"){if(state.inlineEditingId===el.id){ctx.restore();return;}ctx.fillStyle=el.isPlaceholder?"#9ca3af":(el.color||DEFAULT_TEXT_COLOR);ctx.font=textFont(el);ctx.textBaseline="top";const lines=textLines(el);lines.forEach((l,i)=>{const yy=el.y+i*((el.size||18)*1.25);ctx.fillText(l,el.x,yy);if(el.underline){ctx.fillRect(el.x,yy+(el.size||18)+2,ctx.measureText(l).width,1);}})}
+  else if(LINE_TYPES.includes(el.type)){if(el.type==="dashed")c.setLineDash(dashPattern(el));c.beginPath();c.moveTo(el.x,el.y);c.lineTo(el.x+el.w,el.y+el.h);c.stroke();c.setLineDash([]); if(el.type==="arrow"||el.type==="doubleArrow"){const a=Math.atan2(el.h,el.w),hl=14;c.beginPath();c.moveTo(el.x+el.w,el.y+el.h);c.lineTo(el.x+el.w-hl*Math.cos(a-Math.PI/6),el.y+el.h-hl*Math.sin(a-Math.PI/6));c.moveTo(el.x+el.w,el.y+el.h);c.lineTo(el.x+el.w-hl*Math.cos(a+Math.PI/6),el.y+el.h-hl*Math.sin(a+Math.PI/6));c.stroke();} if(el.type==="doubleArrow"){const a=Math.atan2(el.h,el.w),hl=14;c.beginPath();c.moveTo(el.x,el.y);c.lineTo(el.x+hl*Math.cos(a-Math.PI/6),el.y+hl*Math.sin(a-Math.PI/6));c.moveTo(el.x,el.y);c.lineTo(el.x+hl*Math.cos(a+Math.PI/6),el.y+hl*Math.sin(a+Math.PI/6));c.stroke();}}
+  else if(el.type==="text"){if(state.inlineEditingId===el.id){c.restore();return;}c.fillStyle=el.isPlaceholder?"#9ca3af":(el.color||DEFAULT_TEXT_COLOR);c.font=textFont(el);c.textBaseline="top";const lines=textLines(el);lines.forEach((l,i)=>{const yy=el.y+i*((el.size||18)*1.25);c.fillText(l,el.x,yy);if(el.underline){c.fillRect(el.x,yy+(el.size||18)+2,c.measureText(l).width,1);}})}
   else if(el.type==="image"){
     if(el.img&&el.img.complete&&el.img.naturalWidth>0){
-      ctx.drawImage(el.img,el.x,el.y,el.w,el.h);
+      c.drawImage(el.img,el.x,el.y,el.w,el.h);
     } else if(el.src){
       ensureImageLoaded(el);
     }
@@ -1568,17 +1947,65 @@ function drawElement(el){
     const m=emojiMetrics(el.text);
     const S=(el.h||32)/(m.asc+m.desc);
     const gw=m.w*S||1;
-    ctx.save();
-    ctx.translate(el.x, el.y+m.asc*S);
-    ctx.scale((el.w||gw)/gw, 1);
-    ctx.font=`${S}px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif`;
-    ctx.textBaseline="alphabetic";
-    ctx.fillText(el.text,0,0);
-    ctx.restore();
+    c.save();
+    c.translate(el.x, el.y+m.asc*S);
+    c.scale((el.w||gw)/gw, 1);
+    c.font=`${S}px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif`;
+    c.textBaseline="alphabetic";
+    c.fillText(el.text,0,0);
+    c.restore();
   }
-  ctx.restore();
+  c.restore();
 }
-let _renderPending=false; function scheduleRender(){ if(_renderPending) return; _renderPending=true; requestAnimationFrame(()=>{_renderPending=false; render();}); } function render(){
+
+let _renderPending=false;
+function scheduleRender(){
+  if(_renderPending) return;
+  _renderPending=true;
+  requestAnimationFrame(()=>{
+    _renderPending=false;
+    render();
+  });
+}
+
+function renderOverlay(){
+  if(!overlayCtx) return;
+  overlayCtx.clearRect(0,0,innerWidth,innerHeight);
+  overlayCtx.save();
+  overlayCtx.translate(state.camera.x,state.camera.y);
+  overlayCtx.scale(state.camera.zoom,state.camera.zoom);
+
+  // 1. Vanishing / laser pointer strokes
+  state.elements.forEach(el=>{
+    if(el.type==="vanishing") drawElement(el, overlayCtx);
+  });
+  if(state.currentElement && state.currentElement.type==="vanishing"){
+    drawElement(state.currentElement, overlayCtx);
+  }
+
+  // 2. Alignment guides & Snap anchors
+  drawGuideMeasurement(overlayCtx);
+  drawAlignmentGuides(overlayCtx);
+  drawSnapAnchorIndicator(overlayCtx);
+
+  // 3. Fire particles
+  state.fireParticles.forEach(p=>{
+    overlayCtx.save();
+    overlayCtx.globalAlpha=p.alpha;
+    overlayCtx.fillStyle=p.color||"#FF6B00";
+    overlayCtx.font=`${p.size}px sans-serif`;
+    if(p.char==="*"){
+      overlayCtx.beginPath();
+      overlayCtx.arc(p.x,p.y,p.size/3,0,Math.PI*2);
+      overlayCtx.fill();
+    } else overlayCtx.fillText(p.char,p.x,p.y);
+    overlayCtx.restore();
+  });
+
+  overlayCtx.restore();
+}
+
+function render(){
   ctx.clearRect(0,0,innerWidth,innerHeight);
   state.elements.forEach(el=>{
     if(el.type==="timer"&&el.pinned){
@@ -1587,8 +2014,11 @@ let _renderPending=false; function scheduleRender(){ if(_renderPending) return; 
     }
   });
   ctx.save();ctx.translate(state.camera.x,state.camera.y);ctx.scale(state.camera.zoom,state.camera.zoom);
-  state.elements.forEach(drawElement);
-  if(state.currentElement)drawElement(state.currentElement);
+  state.elements.forEach(el=>{
+    if(overlayCtx && el.type==="vanishing") return;
+    drawElement(el, ctx);
+  });
+  if(state.currentElement && (!overlayCtx || state.currentElement.type!=="vanishing")) drawElement(state.currentElement, ctx);
   if(state.selectedIds.length>1){drawMultiSelectionUnified(state.selectedIds);}
   if(state.selectedId && state.selectedIds.length<2){const s=state.elements.find(e=>e.id===state.selectedId);if(s)drawSelection(s)}
   if(state.isSelectingMarquee && state.marqueeStart && state.marqueeCurrent){
@@ -1607,12 +2037,16 @@ let _renderPending=false; function scheduleRender(){ if(_renderPending) return; 
       ctx.restore();
     }
   }
-  drawGuideMeasurement();
-  drawAlignmentGuides();
-  state.fireParticles.forEach(p=>{ctx.save();ctx.globalAlpha=p.alpha;ctx.fillStyle=p.color||"#FF6B00";ctx.font=`${p.size}px sans-serif`;if(p.char==="*"){ctx.beginPath();ctx.arc(p.x,p.y,p.size/3,0,Math.PI*2);ctx.fill();} else ctx.fillText(p.char,p.x,p.y);ctx.restore();});
+  if(!overlayCtx){
+    drawGuideMeasurement(ctx);
+    drawAlignmentGuides(ctx);
+    drawSnapAnchorIndicator(ctx);
+    state.fireParticles.forEach(p=>{ctx.save();ctx.globalAlpha=p.alpha;ctx.fillStyle=p.color||"#FF6B00";ctx.font=`${p.size}px sans-serif`;if(p.char==="*"){ctx.beginPath();ctx.arc(p.x,p.y,p.size/3,0,Math.PI*2);ctx.fill();} else ctx.fillText(p.char,p.x,p.y);ctx.restore();});
+  }
   ctx.restore();
   renderMinimap();
   updateZoomLabel();
+  if(overlayCtx) renderOverlay();
 }
 function getMultiBounds(ids){
   let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
@@ -1669,9 +2103,10 @@ function drawMultiSelectionUnified(ids){
   ctx.restore();
   state._multiHandles={corners,sides,rot:{x:rhX,y:rhY},center:{x:cx,y:cy},bounds:b};
 }
-function drawGuideMeasurement(){
+function drawGuideMeasurement(targetCtx=ctx){
   const cur=state.currentElement;
   if(!cur) return;
+  const c=targetCtx||ctx;
   const z=Math.max(0.05,state.camera.zoom);
   let a=null,b=null;
   if((state.activeRuler||state.activeProtractor)&&cur.points&&cur.points.length>1){a=cur.points[0];b=cur.points[cur.points.length-1];}
@@ -1688,14 +2123,14 @@ function drawGuideMeasurement(){
     label=Math.round(len)+" px  ("+(len/37.8).toFixed(1)+" cm)";
   }
   const mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
-  ctx.save();
-  ctx.font=`${12/z}px Segoe UI,sans-serif`;
-  const tw=ctx.measureText(label).width;
-  ctx.fillStyle="rgba(15,23,42,0.86)";
-  roundRectPath(mx-tw/2-6/z, my-30/z, tw+12/z, 20/z, 6/z); ctx.fill();
-  ctx.fillStyle="#fff"; ctx.textBaseline="middle"; ctx.textAlign="center";
-  ctx.fillText(label, mx, my-20/z);
-  ctx.restore();
+  c.save();
+  c.font=`${12/z}px Segoe UI,sans-serif`;
+  const tw=c.measureText(label).width;
+  c.fillStyle="rgba(15,23,42,0.86)";
+  roundRectPath(mx-tw/2-6/z, my-30/z, tw+12/z, 20/z, 6/z, c); c.fill();
+  c.fillStyle="#fff"; c.textBaseline="middle"; c.textAlign="center";
+  c.fillText(label, mx, my-20/z);
+  c.restore();
 }
 function drawSelection(el){
   if(LINE_TYPES.includes(el.type)){
@@ -1738,23 +2173,23 @@ function drawSelection(el){
     {x:b.x+b.w+pad,y:b.y+b.h/2}
   ];
   corners.forEach(h=>handle(h.x,h.y));
-  sides.forEach(h=>handle(h.x,h.y));
+  if(!isText) sides.forEach(h=>handle(h.x,h.y));
   const rhX=b.x+b.w/2,rhY=b.y+b.h+pad+20/z;
   ctx.strokeStyle="#2563eb"; ctx.lineWidth=1.25/z;
   ctx.beginPath();ctx.moveTo(rhX,b.y+b.h+pad+2/z);ctx.lineTo(rhX,rhY-hs-1/z);ctx.stroke();
   handle(rhX,rhY);
   ctx.restore();
-  el._handles={corners,sides,rot:{x:rhX,y:rhY},center:{x:cx,y:cy}};
+  el._handles={corners,sides:isText?[]:sides,rot:{x:rhX,y:rhY},center:{x:cx,y:cy}};
 }
 function hitHandles(el,wp){
+  const z = Math.max(0.05, state.camera.zoom);
+  const tol = 12 / z;
   if(state.selectedIds.length > 1){
     const b = getMultiBounds(state.selectedIds);
     if(b.w > 0 && b.h > 0){
-      const tol = 20 / state.camera.zoom;
-      const z = Math.max(0.05, state.camera.zoom);
       const pad = 8 / z;
       const rhX = b.x + b.w / 2, rhY = b.y + b.h + pad + 20 / z;
-      if(Math.hypot(wp.x - rhX, wp.y - rhY) < tol + 8) return { mode: "rotateMulti" };
+      if(Math.hypot(wp.x - rhX, wp.y - rhY) < tol + 6) return { mode: "rotateMulti" };
       const corners = [
         { x: b.x - pad, y: b.y - pad },
         { x: b.x + b.w + pad, y: b.y - pad },
@@ -1774,37 +2209,102 @@ function hitHandles(el,wp){
     }
     return null;
   }
-  if(!el || !el._handles) return null;
-  if(el._handles.endpoints){
-    const tol=16/state.camera.zoom;
-    for(let i=0;i<2;i++){const h=el._handles.endpoints[i]; if(Math.hypot(wp.x-h.x,wp.y-h.y)<tol) return {mode:"endpoint",idx:i};}
+  if(!el) return null;
+  if(LINE_TYPES.includes(el.type)){
+    const pts = [{x: el.x, y: el.y}, {x: el.x + el.w, y: el.y + el.h}];
+    for(let i = 0; i < 2; i++){
+      if(Math.hypot(wp.x - pts[i].x, wp.y - pts[i].y) < tol + 4) return { mode: "endpoint", idx: i };
+    }
     return null;
   }
-  const tol=20/state.camera.zoom;
-  const center=el._handles.center;
-  const localWp=el.rotation?rotatePoint(wp.x,wp.y,center.x,center.y,-el.rotation):wp;
-  for(let i=0;i<el._handles.corners.length;i++){
-    const h=el._handles.corners[i];
-    if(Math.hypot(localWp.x-h.x,localWp.y-h.y)<tol) return {mode:"resize",idx:i,type:"corner"};
+  const isText = el.type === "text";
+  const b = getBounds(el);
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  const pad = (isText ? 6 : 3) / z;
+  const localWp = el.rotation ? rotatePoint(wp.x, wp.y, cx, cy, -el.rotation) : wp;
+  const rhX = b.x + b.w / 2, rhY = b.y + b.h + pad + 20 / z;
+  if(Math.hypot(localWp.x - rhX, localWp.y - rhY) < tol + 6) return { mode: "rotate" };
+  const corners = [
+    { x: b.x - pad, y: b.y - pad },
+    { x: b.x + b.w + pad, y: b.y - pad },
+    { x: b.x + b.w + pad, y: b.y + b.h + pad },
+    { x: b.x - pad, y: b.y + b.h + pad }
+  ];
+  for(let i = 0; i < corners.length; i++){
+    if(Math.hypot(localWp.x - corners[i].x, localWp.y - corners[i].y) < tol) return { mode: "resize", idx: i, type: "corner" };
   }
-  for(let i=0;i<(el._handles.sides||[]).length;i++){
-    const h=el._handles.sides[i];
-    if(Math.hypot(localWp.x-h.x,localWp.y-h.y)<tol) return {mode:"side",idx:i,type:"side"};
+  if(isText){
+    const leftX = b.x - pad;
+    const rightX = b.x + b.w + pad;
+    const topY = b.y - pad;
+    const botY = b.y + b.h + pad;
+    const sideTol = Math.max(tol, 10 / z);
+    if(distToSegment(localWp.x, localWp.y, leftX, topY, leftX, botY) <= sideTol){
+      return { mode: "side", idx: 0, type: "side" };
+    }
+    if(distToSegment(localWp.x, localWp.y, rightX, topY, rightX, botY) <= sideTol){
+      return { mode: "side", idx: 1, type: "side" };
+    }
+    return null;
   }
-  const rh=el._handles.rot;
-  if(rh&&Math.hypot(localWp.x-rh.x,localWp.y-rh.y)<tol+8) return {mode:"rotate"};
+  const sides = [
+    { x: b.x - pad, y: b.y + b.h / 2 },
+    { x: b.x + b.w + pad, y: b.y + b.h / 2 }
+  ];
+  for(let i = 0; i < sides.length; i++){
+    if(Math.hypot(localWp.x - sides[i].x, localWp.y - sides[i].y) < tol) return { mode: "side", idx: i, type: "side" };
+  }
   return null;
 }
-function isPointInElementGeometry(el, wp, hitTol = 8){
+function getElementWorldAABB(el, extraPadding = 0){
+  const b = getBounds(el);
+  const strokePad = (el.width || 2) * 0.5;
+  const totalPad = extraPadding + strokePad;
+  if(!el.rotation){
+    return {
+      minX: b.x - totalPad,
+      maxX: b.x + b.w + totalPad,
+      minY: b.y - totalPad,
+      maxY: b.y + b.h + totalPad
+    };
+  }
+  const cx = b.x + b.w * 0.5;
+  const cy = b.y + b.h * 0.5;
+  const rad = (el.rotation * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(rad));
+  const sin = Math.abs(Math.sin(rad));
+  const hw = b.w * 0.5 + totalPad;
+  const hh = b.h * 0.5 + totalPad;
+  const newHw = hw * cos + hh * sin;
+  const newHh = hw * sin + hh * cos;
+  return {
+    minX: cx - newHw,
+    maxX: cx + newHw,
+    minY: cy - newHh,
+    maxY: cy + newHh
+  };
+}
+
+function hitTest(el, wp, hitTol = 8){
   if(!el) return false;
+
+  // STAGE 1: Fast Axis-Aligned Bounding Box (AABB) Broad-Phase Rejection Check
+  const aabb = getElementWorldAABB(el, hitTol);
+  if(wp.x < aabb.minX || wp.x > aabb.maxX || wp.y < aabb.minY || wp.y > aabb.maxY){
+    return false;
+  }
+
+  // STAGE 2: Precise Geometric Intersection Testing in local coordinate space
   const tol = hitTol;
-  
-  // 1. Strokes (pen, highlighter, vanishing)
+  const b = getBounds(el);
+  const cx = b.x + b.w / 2;
+  const cy = b.y + b.h / 2;
+  const lp = el.rotation ? rotatePoint(wp.x, wp.y, cx, cy, -el.rotation) : wp;
+  const strokeWidth = el.width || 2;
+  const hitR = tol + strokeWidth * 0.5;
+
+  // 1. Freehand & Styled Strokes (pen, highlighter, vanishing)
   if(STROKE_TYPES.includes(el.type) && el.points && el.points.length){
-    const b = getBounds(el);
-    const c = getCenter(b);
-    const lp = el.rotation ? rotatePoint(wp.x, wp.y, c.x, c.y, -el.rotation) : wp;
-    const hitR = tol + (el.width || 2) * 0.5;
     if(el.points.length === 1){
       return Math.hypot(lp.x - el.points[0].x, lp.y - el.points[0].y) <= hitR;
     }
@@ -1815,28 +2315,20 @@ function isPointInElementGeometry(el, wp, hitTol = 8){
     }
     return false;
   }
-  
+
   // 2. Lines & Arrows
   if(LINE_TYPES.includes(el.type)){
-    const b = getBounds(el);
-    const c = getCenter(b);
-    const lp = el.rotation ? rotatePoint(wp.x, wp.y, c.x, c.y, -el.rotation) : wp;
-    const hitR = tol + (el.width || 2) * 0.5;
     return distToSegment(lp.x, lp.y, el.x, el.y, el.x + el.w, el.y + el.h) <= hitR;
   }
-  
-  // 3. Circle / Ellipse
+
+  // 3. Circle & Ellipse
   if(el.type === "circle" || el.type === "ellipse"){
-    const cx = el.x + el.w / 2;
-    const cy = el.y + el.h / 2;
     const rx = Math.abs(el.w / 2);
     const ry = Math.abs(el.h / 2);
-    if(rx < 1 || ry < 1) return false;
-    const lp = el.rotation ? rotatePoint(wp.x, wp.y, cx, cy, -el.rotation) : wp;
+    if(rx < 0.5 || ry < 0.5) return false;
     const nx = (lp.x - cx) / rx;
     const ny = (lp.y - cy) / ry;
     const normDist = Math.hypot(nx, ny);
-    const hitR = tol + (el.width || 2) * 0.5;
     if(el.fill){
       return normDist <= 1 + hitR / Math.max(rx, ry, 1);
     } else {
@@ -1844,17 +2336,13 @@ function isPointInElementGeometry(el, wp, hitTol = 8){
       return distFromPerimeter <= hitR;
     }
   }
-  
-  // 4. Rect / RoundRect
+
+  // 4. Rectangle & Rounded Rectangle
   if(el.type === "rect" || el.type === "roundRect"){
-    const cx = el.x + el.w / 2;
-    const cy = el.y + el.h / 2;
-    const lp = el.rotation ? rotatePoint(wp.x, wp.y, cx, cy, -el.rotation) : wp;
     const minX = Math.min(el.x, el.x + el.w);
     const maxX = Math.max(el.x, el.x + el.w);
     const minY = Math.min(el.y, el.y + el.h);
     const maxY = Math.max(el.y, el.y + el.h);
-    const hitR = tol + (el.width || 2) * 0.5;
     if(el.fill){
       return lp.x >= minX - hitR && lp.x <= maxX + hitR && lp.y >= minY - hitR && lp.y <= maxY + hitR;
     } else {
@@ -1867,27 +2355,19 @@ function isPointInElementGeometry(el, wp, hitTol = 8){
       return distToPoly(lp.x, lp.y, pts) <= hitR;
     }
   }
-  
-  // 5. Polygons / Geometric Shapes (triangle, diamond, star, hexagon)
+
+  // 5. Polygons & Geometric Shapes (triangle, diamond, star, hexagon)
   if(["triangle", "diamond", "star", "hexagon"].includes(el.type)){
-    const cx = el.x + el.w / 2;
-    const cy = el.y + el.h / 2;
-    const lp = el.rotation ? rotatePoint(wp.x, wp.y, cx, cy, -el.rotation) : wp;
     const pts = shapePoints(el);
-    const hitR = tol + (el.width || 2) * 0.5;
     if(el.fill){
       return pointInPoly(lp.x, lp.y, pts) || distToPoly(lp.x, lp.y, pts) <= hitR;
     } else {
       return distToPoly(lp.x, lp.y, pts) <= hitR;
     }
   }
-  
+
   // 6. Heart shape
   if(el.type === "heart"){
-    const cx = el.x + el.w / 2;
-    const cy = el.y + el.h / 2;
-    const lp = el.rotation ? rotatePoint(wp.x, wp.y, cx, cy, -el.rotation) : wp;
-    const hitR = tol + (el.width || 2) * 0.5;
     const w = el.w, h = el.h, x = el.x, y = el.y;
     const pts = [
       { x: cx, y: y + h * 0.35 },
@@ -1904,18 +2384,77 @@ function isPointInElementGeometry(el, wp, hitTol = 8){
     }
   }
 
-  // 7. Text, Sticky notes, Images, PDFs, Emoji, Ruler, Protractor, Axes, Compass, Timer
-  const b = getBounds(el);
-  const c = getCenter(b);
-  const lp = el.rotation ? rotatePoint(wp.x, wp.y, c.x, c.y, -el.rotation) : wp;
-  const pad = el.type === "text" ? 8 : 6;
+  // 7. Coordinate Axes (x-axis and y-axis lines)
+  if(el.type === "axes"){
+    const ox = el.x + el.w * 0.12, oy = el.y + el.h * 0.88;
+    const hitYAxis = distToSegment(lp.x, lp.y, ox, el.y + 8, ox, oy) <= hitR + 2;
+    const hitXAxis = distToSegment(lp.x, lp.y, ox, oy, el.x + el.w - 8, oy) <= hitR + 2;
+    return hitYAxis || hitXAxis;
+  }
+
+  // 8. Text elements (exact text lines / glyph geometry + border hit testing, ignoring empty space)
+  if(el.type === "text"){
+    const pad = Math.max(hitTol, 4);
+    const size = el.size || 18;
+    const lh = size * 1.25;
+    const lines = textLines(el);
+
+    // a) Check if cursor is touching the actual border/perimeter of the text bounding box
+    const boxPts = [
+      { x: b.x, y: b.y },
+      { x: b.x + b.w, y: b.y },
+      { x: b.x + b.w, y: b.y + b.h },
+      { x: b.x, y: b.y + b.h }
+    ];
+    if(distToPoly(lp.x, lp.y, boxPts) <= pad){
+      return true;
+    }
+
+    // b) Check if cursor is directly touching any actual text line / glyphs
+    let hasAnyText = false;
+    ctx.save();
+    ctx.font = textFont(el);
+    for(let i = 0; i < lines.length; i++){
+      const rawLine = lines[i];
+      const str = (el.isPlaceholder && (!rawLine || !rawLine.length)) ? "Type here" : rawLine;
+      if(!str || !str.length) continue;
+      hasAnyText = true;
+      const textW = Math.max(8, ctx.measureText(str).width);
+      const lineTop = el.y + i * lh;
+      const lineBottom = lineTop + lh;
+      const lineLeft = el.x;
+      const lineRight = el.x + textW;
+
+      if(lp.x >= lineLeft - pad && lp.x <= lineRight + pad && lp.y >= lineTop - pad && lp.y <= lineBottom + pad){
+        ctx.restore();
+        return true;
+      }
+    }
+    ctx.restore();
+
+    // c) If text is empty (no glyphs typed yet), allow clicking its caret origin box
+    if(!hasAnyText){
+      const minW = Math.max(16, size);
+      if(lp.x >= el.x - pad && lp.x <= el.x + minW + pad && lp.y >= el.y - pad && lp.y <= el.y + lh + pad){
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // 9. Universal element bounds testing (Sticky notes, Images, PDFs, SVGs, Emoji, Ruler, Protractor, Timer, Imported Elements)
+  const pad = 4;
   return lp.x >= b.x - pad && lp.x <= b.x + b.w + pad && lp.y >= b.y - pad && lp.y <= b.y + b.h + pad;
 }
 
-function hitElement(wp){
+const isPointInElementGeometry = hitTest;
+
+function hitElement(wp, hitTol = 8){
+  // Iterates through objects in reverse-z-index order (top-to-bottom), stopping at the first object that passes hitTest
   for(let i = state.elements.length - 1; i >= 0; i--){
     const el = state.elements[i];
-    if(isPointInElementGeometry(el, wp)){
+    if(hitTest(el, wp, hitTol)){
       return el;
     }
   }
@@ -3426,7 +3965,7 @@ function finalizeShape(cur){
   return true;
 }
 
-canvas.addEventListener("pointerdown",e=>{
+function handlePointerDown(e){
   const rail=document.getElementById("sticky-color-rail");
   const boardsModal=document.getElementById("boards-modal");
   if(inlineBox&&!inlineBox.contains(e.target)&&!(selToolbar&&selToolbar.contains(e.target))&&!(rcMenu&&rcMenu.contains(e.target))&&!(boardsModal&&boardsModal.contains(e.target))&&!(rail&&rail.contains(e.target))){
@@ -3462,12 +4001,52 @@ canvas.addEventListener("pointerdown",e=>{
   }
   if(state.tool==="select"){
     const multiKey=e.ctrlKey||e.metaKey||e.shiftKey;
+
+    if(!multiKey){
+      // Priority 1: Check active selection handles first (corners, sides, rotation, endpoints)
+      if(state.selectedIds.length > 1){
+        const hh = hitHandles(null, wPos);
+        if(hh){
+          state.isTransforming = true;
+          state.transform.didPush = false;
+          state.transform.mode = hh.mode;
+          state.transform.handle = hh;
+          state.transform.startMouse = { ...wPos };
+          state.transform.startMultiBounds = getMultiBounds(state.selectedIds);
+          state.transform.center = getCenter(state.transform.startMultiBounds);
+          state.transform.startMulti = state.selectedIds.map(id => {
+            const el = state.elements.find(x => x.id === id);
+            return el ? { id, x: el.x, y: el.y, w: el.w, h: el.h, size: el.size, rotation: el.rotation || 0, points: el.points ? el.points.map(pt => ({ ...pt })) : null } : null;
+          }).filter(Boolean);
+          return;
+        }
+      } else if(state.selectedId){
+        const sel = state.elements.find(el => el.id === state.selectedId);
+        if(sel && !sel.locked){
+          const hh = hitHandles(sel, wPos);
+          if(hh){
+            state.isTransforming = true;
+            state.transform.didPush = false;
+            state.transform.mode = hh.mode;
+            state.transform.handle = hh;
+            state.transform.startMouse = { ...wPos };
+            state.transform.startEl = { ...sel, points: sel.points ? sel.points.map(p => ({ ...p })) : null, w: sel.w, h: sel.h, x: sel.x, y: sel.y, size: sel.size, rotation: sel.rotation };
+            state.transform.startBounds = getBounds(sel);
+            state.transform.center = getCenter(state.transform.startBounds);
+            return;
+          }
+        }
+      }
+    }
+
+    // Priority 2: Precise visual geometry hit testing in reverse Z-index order (top-to-bottom)
+    const hit = hitElement(wPos);
+
     if(multiKey){
-      const h=hitElement(wPos);
-      if(h){
+      if(hit){
         if(state.selectedId && !state.selectedIds.includes(state.selectedId)) state.selectedIds.push(state.selectedId);
-        const i=state.selectedIds.indexOf(h.id);
-        if(i>=0) state.selectedIds.splice(i,1); else state.selectedIds.push(h.id);
+        const i=state.selectedIds.indexOf(hit.id);
+        if(i>=0) state.selectedIds.splice(i,1); else state.selectedIds.push(hit.id);
         state.selectedId=state.selectedIds.length===1?state.selectedIds[0]:null;
         if(state.selectedIds.length>1){
           showMultiToolbar();
@@ -3486,45 +4065,35 @@ canvas.addEventListener("pointerdown",e=>{
       state.marqueeBaseIds=[...state.selectedIds];
       render(); return;
     }
-    if(state.selectedIds.length>1){
-      const hh=hitHandles(null,wPos);
-      if(hh){
-        state.isTransforming=true;
-        state.transform.didPush=false;
-        state.transform.mode=hh.mode;
-        state.transform.handle=hh;
-        state.transform.startMouse={...wPos};
-        state.transform.startMultiBounds=getMultiBounds(state.selectedIds);
-        state.transform.center=getCenter(state.transform.startMultiBounds);
-        state.transform.startMulti=state.selectedIds.map(id=>{
-          const el=state.elements.find(x=>x.id===id);
-          return el?{id,x:el.x,y:el.y,w:el.w,h:el.h,size:el.size,rotation:el.rotation||0,points:el.points?el.points.map(pt=>({...pt})):null}:null;
-        }).filter(Boolean);
-        return;
-      }
-      const h=hitElement(wPos);
-      if(h && state.selectedIds.includes(h.id)){
-        state.isTransforming=true; state.transform.didPush=false; state.transform.mode="moveMulti";
-        state.transform.startMouse={...wPos};
-        state.transform.startMulti=state.selectedIds.map(id=>{
-          const el=state.elements.find(x=>x.id===id);
-          return el?{id,x:el.x,y:el.y,w:el.w,h:el.h,size:el.size,rotation:el.rotation||0,points:el.points?el.points.map(pt=>({...pt})):null}:null;
-        }).filter(Boolean);
-        return;
-      }
-      state.selectedIds=[];
-      state.selectedId=null;
-      hideToolbar();
-    }
-    const sel=state.elements.find(el=>el.id===state.selectedId);
-    if(sel&&!sel.locked){const hh=hitHandles(sel,wPos);if(hh){state.isTransforming=true;state.transform.didPush=false;state.transform.mode=hh.mode;state.transform.handle=hh;state.transform.startMouse={...wPos};state.transform.startEl={...sel,points:sel.points?sel.points.map(p=>({...p})):null,w:sel.w,h:sel.h,x:sel.x,y:sel.y,size:sel.size,rotation:sel.rotation};state.transform.startBounds=getBounds(sel);state.transform.center=getCenter(state.transform.startBounds);return;}}
-    const hit=hitElement(wPos);
+
     if(hit){
+      if(state.selectedIds.length>1 && state.selectedIds.includes(hit.id)){
+        state.isTransforming=true; state.transform.didPush=false; state.transform.mode="moveMulti";
+        state.transform.clickedElementId=hit.id;
+        state.transform.startMouse={...wPos};
+        state.transform.startMulti=state.selectedIds.map(id=>{
+          const el=state.elements.find(x=>x.id===id);
+          return el?{id,x:el.x,y:el.y,w:el.w,h:el.h,size:el.size,rotation:el.rotation||0,points:el.points?el.points.map(pt=>({...pt})):null}:null;
+        }).filter(Boolean);
+        return;
+      }
+
+      if(state.selectedId===hit.id && state.selectedIds.length<=1){
+        if(hit.locked){state.selectedId=hit.id;state.selectedIds=[hit.id];showToolbar(hit);render();return;}
+        if(hit.isPlaceholder&&hit.type==="text"){createInlineEditor({x:hit.x,y:hit.y},hit,{selectAll:false});return;}
+        state.selectedId=hit.id;state.selectedIds=[hit.id];state.isTransforming=true;state.transform.didPush=false;state.transform.mode="move";state.transform.startMouse={...wPos};state.transform.startEl={...hit,points:hit.points?hit.points.map(p=>({...p})):null,x:hit.x,y:hit.y};
+        showToolbar(hit);render();return;
+      }
+
+      // Hit a distinct individual element under the cursor: select only this item
+      state.selectedId=hit.id;
+      state.selectedIds=[hit.id];
       if(hit.locked){state.selectedId=hit.id;state.selectedIds=[hit.id];showToolbar(hit);render();return;}
       if(hit.isPlaceholder&&hit.type==="text"){createInlineEditor({x:hit.x,y:hit.y},hit,{selectAll:false});return;}
-      state.selectedId=hit.id;state.selectedIds=[hit.id];state.isTransforming=true;state.transform.didPush=false;state.transform.mode="move";state.transform.startMouse={...wPos};state.transform.startEl={...hit,points:hit.points?hit.points.map(p=>({...p})):null,x:hit.x,y:hit.y};
+      state.isTransforming=true;state.transform.didPush=false;state.transform.mode="move";state.transform.startMouse={...wPos};state.transform.startEl={...hit,points:hit.points?hit.points.map(p=>({...p})):null,x:hit.x,y:hit.y};
       showToolbar(hit);render();return;
     }
+
     state.selectedId=null; state.selectedIds=[]; state.editArmed=null; hideToolbar();
     state.isSelectingMarquee=true;
     state.marqueeStart={...wPos};
@@ -3547,10 +4116,17 @@ canvas.addEventListener("pointerdown",e=>{
   }else if(state.tool==="compass"){
     state.currentElement={id:genId(),type:"compassGuide",x:wPos.x,y:wPos.y,w:0,h:0,color:state.toolColors.shape||"#1E1E1E",width:state.width||2};
   }else{
+    let sx = wPos.x, sy = wPos.y;
+    if(LINE_TYPES.includes(state.tool)){
+      const startAnchor = findNearestAnchor(wPos);
+      if(startAnchor){ sx = startAnchor.x; sy = startAnchor.y; }
+    }
     const shapeColor=(GEOMETRIC_SHAPES.includes(state.tool)?state.toolColors.shape:state.color)||"#1E1E1E";
-    state.currentElement={id:genId(),type:state.tool,color:shapeColor,width:state.width,fill:false,x:wPos.x,y:wPos.y,w:0,h:0,rotation:0};
+    state.currentElement={id:genId(),type:state.tool,color:shapeColor,width:state.width,fill:false,x:sx,y:sy,w:0,h:0,rotation:0};
   }
-});
+}
+
+canvas.addEventListener("pointerdown", handlePointerDown);
 
 addEventListener("pointermove",e=>{
   state.hasMouseMoved=true;
@@ -3608,7 +4184,12 @@ addEventListener("pointermove",e=>{
       const moved=Math.hypot(wPos.x-state.transform.startMouse.x,wPos.y-state.transform.startMouse.y)>1.5;
       if(!state.transform.didPush && (moved||state.transform.mode!=="moveMulti")){pushUndo();state.transform.didPush=true;}
       if(state.transform.mode==="moveMulti"){
-        const dx=wPos.x-state.transform.startMouse.x,dy=wPos.y-state.transform.startMouse.y;
+        const rawDx=wPos.x-state.transform.startMouse.x, rawDy=wPos.y-state.transform.startMouse.y;
+        const sb=state.transform.startMultiBounds || getMultiBounds(state.selectedIds);
+        const excludeIds = state.selectedIds || [];
+        const snapRes = computeAlignmentAndSnapping(sb, sb, rawDx, rawDy, excludeIds, e.shiftKey);
+        const dx = snapRes.dx, dy = snapRes.dy;
+        state.alignmentGuides = snapRes.guides;
         (state.transform.startMulti||[]).forEach(st=>{
           const t=state.elements.find(x=>x.id===st.id); if(!t||t.locked) return;
           if(st.points) t.points=st.points.map(pt=>({x:pt.x+dx,y:pt.y+dy}));
@@ -3730,77 +4311,27 @@ addEventListener("pointermove",e=>{
         const ang=Math.atan2(py-ay,px-ax), len=Math.hypot(px-ax,py-ay);
         const snap=Math.round(ang/(Math.PI/12))*(Math.PI/12);
         px=ax+Math.cos(snap)*len; py=ay+Math.sin(snap)*len;
+        state.activeSnapAnchor = null;
+      } else {
+        const snapAnchor = findNearestAnchor(wPos, el.id);
+        if(snapAnchor){
+          px = snapAnchor.x;
+          py = snapAnchor.y;
+          state.activeSnapAnchor = snapAnchor;
+        } else {
+          state.activeSnapAnchor = null;
+        }
       }
       if(idx===0){ el.w=(el.x+el.w)-px; el.h=(el.y+el.h)-py; el.x=px; el.y=py; }
       else { el.w=px-el.x; el.h=py-el.y; }
       render(); positionToolbar(); return;
     }
     if(state.transform.mode==="move"){
-      let dx=wPos.x-state.transform.startMouse.x, dy=wPos.y-state.transform.startMouse.y;
-      state.alignmentGuides = [];
-      if(!el.points && !e.shiftKey){
-        const startBounds = state.transform.startBounds || getBounds(state.transform.startEl || el);
-        const testX = startBounds.x + dx;
-        const testY = startBounds.y + dy;
-        const testW = startBounds.w;
-        const testH = startBounds.h;
-        const SNAP_DIST = 6 / state.camera.zoom;
-        
-        let bestSnapX = null, bestDistX = SNAP_DIST;
-        let bestSnapY = null, bestDistY = SNAP_DIST;
-        let guideX = null, guideY = null;
-
-        const curLeft = testX, curRight = testX + testW, curCenterX = testX + testW / 2;
-        const curTop = testY, curBottom = testY + testH, curCenterY = testY + testH / 2;
-
-        state.elements.forEach(other => {
-          if(other.id === el.id || other.locked) return;
-          const ob = getBounds(other);
-          const oLeft = ob.x, oRight = ob.x + ob.w, oCenterX = ob.x + ob.w / 2;
-          const oTop = ob.y, oBottom = ob.y + ob.h, oCenterY = ob.y + ob.h / 2;
-
-          const xPairs = [
-            { cur: curLeft, target: oLeft, offset: 0 },
-            { cur: curRight, target: oRight, offset: testW },
-            { cur: curCenterX, target: oCenterX, offset: testW / 2 },
-            { cur: curLeft, target: oRight, offset: 0 },
-            { cur: curRight, target: oLeft, offset: testW }
-          ];
-          xPairs.forEach(p => {
-            const diff = Math.abs(p.cur - p.target);
-            if(diff < bestDistX){
-              bestDistX = diff;
-              bestSnapX = p.target - p.offset;
-              guideX = { x1: p.target, y1: Math.min(testY, ob.y) - 20, x2: p.target, y2: Math.max(testY + testH, ob.y + ob.h) + 20 };
-            }
-          });
-
-          const yPairs = [
-            { cur: curTop, target: oTop, offset: 0 },
-            { cur: curBottom, target: oBottom, offset: testH },
-            { cur: curCenterY, target: oCenterY, offset: testH / 2 },
-            { cur: curTop, target: oBottom, offset: 0 },
-            { cur: curBottom, target: oTop, offset: testH }
-          ];
-          yPairs.forEach(p => {
-            const diff = Math.abs(p.cur - p.target);
-            if(diff < bestDistY){
-              bestDistY = diff;
-              bestSnapY = p.target - p.offset;
-              guideY = { x1: Math.min(testX, ob.x) - 20, y1: p.target, x2: Math.max(testX + testW, ob.x + ob.w) + 20, y2: p.target };
-            }
-          });
-        });
-
-        if(bestSnapX !== null){
-          dx = bestSnapX - startBounds.x;
-          if(guideX) state.alignmentGuides.push(guideX);
-        }
-        if(bestSnapY !== null){
-          dy = bestSnapY - startBounds.y;
-          if(guideY) state.alignmentGuides.push(guideY);
-        }
-      }
+      const rawDx=wPos.x-state.transform.startMouse.x, rawDy=wPos.y-state.transform.startMouse.y;
+      const startBounds = state.transform.startBounds || getBounds(state.transform.startEl || el);
+      const snapRes = computeAlignmentAndSnapping(startBounds, startBounds, rawDx, rawDy, [el.id], e.shiftKey);
+      const dx = snapRes.dx, dy = snapRes.dy;
+      state.alignmentGuides = snapRes.guides;
 
       if(el.points){el.points=state.transform.startEl.points.map(p=>({x:p.x+dx,y:p.y+dy}));}
       else{el.x=state.transform.startEl.x+dx;el.y=state.transform.startEl.y+dy;}
@@ -3810,6 +4341,8 @@ addEventListener("pointermove",e=>{
       const sb=state.transform.startBounds,idx=state.transform.handle.idx,isSide=state.transform.mode==="side";
       const MIN_W = el.type === "sticky" ? 80 : 10;
       const MIN_H = 10;
+      const c = state.transform.center || getCenter(sb);
+      const localPos = (el.rotation && isSide) ? rotatePoint(wPos.x, wPos.y, c.x, c.y, -el.rotation) : wPos;
       let nx=sb.x,ny=sb.y,nw=sb.w,nh=sb.h;
 
       if(!isSide){
@@ -3836,11 +4369,11 @@ addEventListener("pointermove",e=>{
         }
       } else {
         if(idx===0){
-          nx = Math.min(wPos.x, sb.x + sb.w - MIN_W);
+          nx = Math.min(localPos.x, sb.x + sb.w - MIN_W);
           nw = sb.x + sb.w - nx;
         } else {
           nx = sb.x;
-          nw = Math.max(wPos.x, sb.x + MIN_W) - sb.x;
+          nw = Math.max(localPos.x, sb.x + MIN_W) - sb.x;
         }
         if(el.type==="sticky"){
           el.w = Math.max(80, nw);
@@ -3861,8 +4394,24 @@ addEventListener("pointermove",e=>{
           el.widthMode="manual";
           el.boxWidth=Math.max(MIN_W, nw);
           fitTextElement(el);
-          el.y=sb.y;
-          el.x=(idx===0)?(sb.x+sb.w-el.w):sb.x;
+          if(!el.rotation){
+            el.y=sb.y;
+            el.x=(idx===0)?(sb.x+sb.w-el.w):sb.x;
+          } else {
+            const c0 = { x: sb.x + sb.w/2, y: sb.y + sb.h/2 };
+            const pLocal = (idx === 0) ? { x: sb.x + sb.w, y: sb.y + sb.h/2 } : { x: sb.x, y: sb.y + sb.h/2 };
+            const pWorld = rotatePoint(pLocal.x, pLocal.y, c0.x, c0.y, el.rotation);
+            const newX = (idx === 0) ? (sb.x + sb.w - el.w) : sb.x;
+            const newY = sb.y;
+            const newW = el.w, newH = el.h;
+            const newLocalCenter = { x: newX + newW/2, y: newY + newH/2 };
+            const newLocalFixed = (idx === 0) ? { x: newX + newW, y: newY + newH/2 } : { x: newX, y: newY + newH/2 };
+            const dx = newLocalFixed.x - newLocalCenter.x;
+            const dy = newLocalFixed.y - newLocalCenter.y;
+            const rotOffset = rotatePoint(dx, dy, 0, 0, el.rotation);
+            el.x = pWorld.x - rotOffset.x - newW/2;
+            el.y = pWorld.y - rotOffset.y - newH/2;
+          }
           render();positionToolbar();if(inlineBox) updateInlineEditorTransform();return;
         }
         const startSize=state.transform.startEl.size||18;
@@ -3940,14 +4489,29 @@ addEventListener("pointermove",e=>{
     }
   }
   else if(state.currentElement){
-    let w=wPos.x-state.currentElement.x,h=wPos.y-state.currentElement.y;
+    let endX = wPos.x, endY = wPos.y;
+    if(LINE_TYPES.includes(state.currentElement.type)){
+      const snapAnchor = findNearestAnchor(wPos, state.currentElement.id);
+      if(snapAnchor){
+        endX = snapAnchor.x;
+        endY = snapAnchor.y;
+        state.activeSnapAnchor = snapAnchor;
+      } else {
+        state.activeSnapAnchor = null;
+      }
+    }
+    let w=endX-state.currentElement.x,h=endY-state.currentElement.y;
     if(e.shiftKey && ["rect","roundRect","circle","ellipse","triangle","diamond","star","hexagon","heart"].includes(state.currentElement.type)){
       const s=Math.max(Math.abs(w),Math.abs(h))||1;
       w=Math.sign(w||1)*s; h=Math.sign(h||1)*s;
     }
     state.currentElement.w=w;state.currentElement.h=h;
   }
-  render();
+  if(overlayCtx && state.currentElement && state.currentElement.type==="vanishing"){
+    renderOverlay();
+  } else {
+    render();
+  }
 });
 
 window.addEventListener("pointerup",(e)=>{
@@ -3981,24 +4545,39 @@ window.addEventListener("pointerup",(e)=>{
   }
   if(state.isTransforming){
     state.alignmentGuides = [];
-    const noMove=!state.transform.didPush && state.transform.mode==="move";
-    const el=state.elements.find(ee=>ee.id===state.selectedId);
-    state.isTransforming=false;state.transform.mode=null;
-    if(state.selectedIds.length>1){
+    state.activeSnapAnchor = null;
+    const noMove = !state.transform.didPush;
+    const mode = state.transform.mode;
+    const clickedId = state.transform.clickedElementId;
+    state.isTransforming = false;
+    state.transform.mode = null;
+    state.transform.clickedElementId = null;
+
+    if(mode === "moveMulti" && noMove && clickedId){
+      state.selectedId = clickedId;
+      state.selectedIds = [clickedId];
+      const one = state.elements.find(x => x.id === clickedId);
+      if(one) showToolbar(one); else hideToolbar();
       saveBoards(); updateCursor(); render();
-    } else if(noMove && el && el.type==="timer" && !el.locked){
+      return;
+    }
+
+    const el = state.elements.find(ee => ee.id === state.selectedId);
+    if(state.selectedIds.length > 1){
+      saveBoards(); updateCursor(); render();
+    } else if(noMove && el && el.type === "timer" && !el.locked){
       toggleTimer(el); saveBoards(); render(); updateCursor(); return;
     } else if(noMove && el && ["text","sticky"].includes(el.type) && !el.locked){
-      if(state.editArmed===el.id){
-        createInlineEditor({x:el.x,y:el.y}, el, {selectAll:false});
-        state.editArmed=null;
+      if(state.editArmed === el.id){
+        createInlineEditor({x: el.x, y: el.y}, el, {selectAll: false});
+        state.editArmed = null;
       } else {
-        state.editArmed=el.id;
+        state.editArmed = el.id;
       }
     } else {
-      state.editArmed=null;
+      state.editArmed = null;
     }
-    saveBoards();updateCursor();
+    saveBoards(); updateCursor();
   }
   if(!state.spacePan) state.isPanning=false;
   if(state.tool==="eraser"&&state.isDrawing){
@@ -4033,7 +4612,7 @@ window.addEventListener("pointerup",(e)=>{
     }
     state.currentElement=null;
   }
-  state.isDrawing=false;state.activeRuler=null;state.activeProtractor=null;render();updateCursor();
+  state.isDrawing=false;state.activeRuler=null;state.activeProtractor=null;state.activeSnapAnchor=null;render();updateCursor();
 });
 
 function splitStroke(el, erasePos, radius){
@@ -4124,13 +4703,19 @@ function tickLaserVanish(){
     }
   }
 
-  render();
+  if(overlayCtx){
+    renderOverlay();
+  } else {
+    render();
+  }
 
   if(anyActive){
     requestAnimationFrame(tickLaserVanish);
   } else {
     _laserLoopActive = false;
     state.fireParticles = [];
+    if(overlayCtx) renderOverlay();
+    render();
   }
 }
 
@@ -4142,33 +4727,8 @@ function startLaserVanish(el){
   }
 }
 function hitsErase(el, wPos, radius){
-  if(el.locked) return false;
-  const r=radius;
-  if(STROKE_TYPES.includes(el.type)&&el.points){
-    const hitR=r+(el.width||2)*0.5;
-    for(let i=1;i<el.points.length;i++){
-      if(distToSegment(wPos.x,wPos.y,el.points[i-1].x,el.points[i-1].y,el.points[i].x,el.points[i].y)<=hitR) return true;
-    }
-    if(el.points.length===1 && Math.hypot(wPos.x-el.points[0].x,wPos.y-el.points[0].y)<=hitR) return true;
-    return false;
-  }
-  if(LINE_TYPES.includes(el.type)){
-    return distToSegment(wPos.x,wPos.y,el.x,el.y,el.x+el.w,el.y+el.h)<=r+(el.width||2)*0.5;
-  }
-  if(["circle","ellipse"].includes(el.type)){
-    const cx=el.x+el.w/2, cy=el.y+el.h/2, rx=Math.abs(el.w/2), ry=Math.abs(el.h/2);
-    const nx=rx?(wPos.x-cx)/rx:0, ny=ry?(wPos.y-cy)/ry:0;
-    const d=Math.hypot(nx,ny);
-    if(el.fill) return d<=1+r/Math.max(rx,ry,1);
-    return Math.abs(d-1)*Math.min(rx,ry)<=r+(el.width||2)*0.5;
-  }
-  if(["rect","roundRect","triangle","diamond","star","hexagon","heart"].includes(el.type)){
-    const pts=shapePoints(el);
-    if(el.fill) return pointInPoly(wPos.x,wPos.y,pts) || distToPoly(wPos.x,wPos.y,pts)<=r;
-    return distToPoly(wPos.x,wPos.y,pts)<=r+(el.width||2)*0.5;
-  }
-  const b=getBounds(el);
-  return wPos.x>=b.x && wPos.x<=b.x+b.w && wPos.y>=b.y && wPos.y<=b.y+b.h;
+  if(!el || el.locked) return false;
+  return isPointInElementGeometry(el, wPos, radius);
 }
 function eraseAt(wPos){
   const radius=Math.max(2,state.widths.eraser);
@@ -4196,22 +4756,17 @@ function eraseAt(wPos){
 
 canvas.addEventListener("dblclick",e=>{
   const wp=toWorld(e.clientX,e.clientY);
-  const hitTimer=state.elements.find(el=>{
-    if(el.type!=="timer"||el.locked) return false;
-    const b=getBounds(el);
-    if(el.rotation){
-      const c=getCenter(b);
-      const lp=rotatePoint(wp.x,wp.y,c.x,c.y,-el.rotation);
-      return lp.x>=b.x&&lp.x<=b.x+b.w&&lp.y>=b.y&&lp.y<=b.y+b.h;
+  const hit=hitElement(wp);
+  if(hit && !hit.locked){
+    if(hit.type==="timer"){
+      openTimerEditModal(hit);
+      return;
     }
-    return wp.x>=b.x&&wp.x<=b.x+b.w&&wp.y>=b.y&&wp.y<=b.y+b.h;
-  });
-  if(hitTimer){
-    openTimerEditModal(hitTimer);
-    return;
+    if(hit.type==="text" || hit.type==="sticky"){
+      createInlineEditor({x:hit.x,y:hit.y},hit,{selectAll:false});
+      return;
+    }
   }
-  const hit=state.elements.find(el=>{if(el.type!=="text"&&el.type!=="sticky")return false;if(el.locked)return false;const b=getBounds(el);if(el.rotation){const c=getCenter(b);const lp=rotatePoint(wp.x,wp.y,c.x,c.y,-el.rotation);return lp.x>=b.x&&lp.x<=b.x+b.w&&lp.y>=b.y&&lp.y<=b.y+b.h;}return wp.x>=b.x&&wp.x<=b.x+b.w&&wp.y>=b.y&&wp.y<=b.y+b.h;});
-  if(hit){createInlineEditor({x:hit.x,y:hit.y},hit,{selectAll:false});return;}
 });
 
 document.getElementById("pen-btn").addEventListener("dblclick",e=>{e.stopPropagation();openPopover("pen-popover");});

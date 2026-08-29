@@ -1,11 +1,17 @@
+import { GoogleGenAI } from "@google/genai";
+
 const AI_GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 
-function getAiKey(): string {
-  const apiKey = process.env["LOVABLE_API_KEY"];
-  if (!apiKey) {
-    throw new Error("AI service is not configured for this project.");
+function getAiKey(): { type: "gemini" | "lovable"; key: string } {
+  const geminiKey = process.env["GEMINI_API_KEY"];
+  if (geminiKey) {
+    return { type: "gemini", key: geminiKey };
   }
-  return apiKey;
+  const lovableKey = process.env["LOVABLE_API_KEY"];
+  if (lovableKey) {
+    return { type: "lovable", key: lovableKey };
+  }
+  throw new Error("Gemini API key is not configured. Please set GEMINI_API_KEY.");
 }
 
 
@@ -109,7 +115,13 @@ export interface ConversionResponse {
   };
 }
 
-// Candidate models in order of capability, quality, and availability
+// Candidate Gemini models in order of capability, quality, and availability
+const GEMINI_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-1.5-flash",
+];
+
 const CANDIDATE_MODELS = [
   "google/gemini-2.5-flash",
   "google/gemini-2.5-flash-lite",
@@ -156,7 +168,7 @@ async function sleep(ms: number): Promise<void> {
 }
 
 export async function convertWhiteboardImage(req: ConvertImageRequest): Promise<ConversionResponse> {
-  const apiKey = getAiKey();
+  const auth = getAiKey();
   const { imageBase64, mimeType, width, height } = req;
 
   // Clean base64 string if data URL prefix was passed
@@ -208,78 +220,114 @@ Output STRICT JSON in this exact structure:
   let lastError: unknown = null;
   let responseText: string | null = null;
 
-  // Try candidate models with swift fallback
-  for (const modelName of CANDIDATE_MODELS) {
-    const isCandidateRetryable = true;
-    const maxRetries = 1;
-
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+  if (auth.type === "gemini") {
+    const ai = new GoogleGenAI({ apiKey: auth.key });
+    for (const modelName of GEMINI_MODELS) {
       try {
-        if (attempt > 0) {
-          // Brief pause before retry
-          await sleep(500);
-        }
-
-        const res = await fetch(AI_GATEWAY_URL, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: modelName,
-            temperature: 0.1,
-            response_format: { type: "json_object" },
-            messages: [
-              {
-                role: "user",
-                content: [
-                  { type: "text", text: prompt },
-                  {
-                    type: "image_url",
-                    image_url: { url: `data:${mimeType || "image/png"};base64,${cleanBase64}` },
+        const resp = await ai.models.generateContent({
+          model: modelName,
+          contents: [
+            {
+              role: "user",
+              parts: [
+                { text: prompt },
+                {
+                  inlineData: {
+                    mimeType: mimeType || "image/png",
+                    data: cleanBase64,
                   },
-                ],
-              },
-            ],
-          }),
+                },
+              ],
+            },
+          ],
+          config: {
+            responseMimeType: "application/json",
+            temperature: 0.1,
+          },
         });
-
-        if (!res.ok) {
-          const errBody = await res.text().catch(() => "");
-          throw new Error(`${res.status} ${errBody}`);
-        }
-
-        const json = (await res.json()) as {
-          choices?: Array<{ message?: { content?: string } }>;
-        };
-        const content = json.choices?.[0]?.message?.content;
-        if (content) {
-          responseText = content;
+        if (resp.text) {
+          responseText = resp.text;
           break;
         }
       } catch (err: any) {
         lastError = err;
         const errStr = String(err?.message || err);
-        console.warn(`Model ${modelName} attempt ${attempt + 1} failed: ${errStr}`);
-
-        // If the model hits quota exhaustion, 404, or is unsupported, do NOT burn retries on it
+        console.warn(`Gemini model ${modelName} failed: ${errStr}`);
         if (isQuotaOrRateLimitError(errStr) || errStr.includes("NOT_FOUND") || errStr.includes("404")) {
-          console.warn(`Skipping remaining retries for ${modelName} due to quota limit or unavailability; falling back to next candidate model.`);
-          break;
+          continue;
         }
       }
     }
+  } else {
+    // Lovable AI Gateway fallback
+    for (const modelName of CANDIDATE_MODELS) {
+      const maxRetries = 1;
 
-    if (responseText) {
-      break;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          if (attempt > 0) {
+            await sleep(500);
+          }
+
+          const res = await fetch(AI_GATEWAY_URL, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${auth.key}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: modelName,
+              temperature: 0.1,
+              response_format: { type: "json_object" },
+              messages: [
+                {
+                  role: "user",
+                  content: [
+                    { type: "text", text: prompt },
+                    {
+                      type: "image_url",
+                      image_url: { url: `data:${mimeType || "image/png"};base64,${cleanBase64}` },
+                    },
+                  ],
+                },
+              ],
+            }),
+          });
+
+          if (!res.ok) {
+            const errBody = await res.text().catch(() => "");
+            throw new Error(`${res.status} ${errBody}`);
+          }
+
+          const json = (await res.json()) as {
+            choices?: Array<{ message?: { content?: string } }>;
+          };
+          const content = json.choices?.[0]?.message?.content;
+          if (content) {
+            responseText = content;
+            break;
+          }
+        } catch (err: any) {
+          lastError = err;
+          const errStr = String(err?.message || err);
+          console.warn(`Model ${modelName} attempt ${attempt + 1} failed: ${errStr}`);
+
+          if (isQuotaOrRateLimitError(errStr) || errStr.includes("NOT_FOUND") || errStr.includes("404")) {
+            break;
+          }
+        }
+      }
+
+      if (responseText) {
+        break;
+      }
     }
   }
 
   if (!responseText) {
     const cleanMsg = cleanErrorMessage(lastError);
     if (isQuotaOrRateLimitError(cleanMsg)) {
-      throw new Error("AI Vision rate limit reached. Please wait a few seconds and try again, or attach your personal Gemini API key.");
+      throw new Error("AI Vision rate limit reached. Please wait a few seconds and try again, or configure your GEMINI_API_KEY.");
     }
     throw new Error(cleanMsg || "The AI vision service is currently experiencing high demand. Please try again shortly.");
   }
