@@ -350,7 +350,7 @@ function makeThumbnail(){
       }
     } else if(el.type==="text"){
       g.fillStyle=el.color||"#111827"; g.font=textFont(el); g.textBaseline="top";
-      String(el.text||"").split("\n").forEach((l,i)=>g.fillText(l,el.x,el.y+i*((el.size||18)*1.25)));
+      textLines(el).forEach((l,i)=>g.fillText(l,el.x,el.y+i*((el.size||18)*1.25)));
     } else if(el.type==="emoji"){
       g.font=`${el.w||32}px sans-serif`; g.textBaseline="top"; g.fillText(el.text||"",el.x,el.y);
     } else if(el.type==="image"){
