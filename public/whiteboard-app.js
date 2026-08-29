@@ -3855,12 +3855,24 @@ addEventListener("pointermove",e=>{
       nh = Math.max(MIN_H, nh);
 
       if(el.type==="text"){
+        if(isSide){
+          // Manual-width mode: container width only, font size untouched.
+          el.widthMode="manual";
+          el.boxWidth=Math.max(MIN_W, nw);
+          fitTextElement(el);
+          el.y=sb.y;
+          el.x=(idx===0)?(sb.x+sb.w-el.w):sb.x;
+          render();positionToolbar();if(inlineBox) updateInlineEditorTransform();return;
+        }
         const startSize=state.transform.startEl.size||18;
-        const scale=isSide?(nw/Math.max(1,sb.w)):((nw/Math.max(1,sb.w)+nh/Math.max(1,sb.h))/2);
+        const scale=(nw/Math.max(1,sb.w)+nh/Math.max(1,sb.h))/2;
         el.size=clamp(startSize*Math.max(0.05,scale),6,400);
+        if(isManualWidthText(el)){
+          const startBox=state.transform.startEl.boxWidth||sb.w;
+          el.boxWidth=Math.max(MIN_W, startBox*Math.max(0.05,scale));
+        }
         fitTextElement(el);
-        if(isSide){ el.y=sb.y; el.x=(idx===0)?(sb.x+sb.w-el.w):sb.x; }
-        else if(idx===0){ el.x=sb.x+sb.w-el.w; el.y=sb.y+sb.h-el.h; }
+        if(idx===0){ el.x=sb.x+sb.w-el.w; el.y=sb.y+sb.h-el.h; }
         else if(idx===1){ el.x=sb.x; el.y=sb.y+sb.h-el.h; }
         else if(idx===2){ el.x=sb.x; el.y=sb.y; }
         else { el.x=sb.x+sb.w-el.w; el.y=sb.y; }
