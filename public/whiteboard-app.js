@@ -143,7 +143,7 @@ const state={
   camera:{x:0,y:0,zoom:1},elements:[],undoStack:[],redoStack:[],currentElement:null,
   selectedIds:[],selectedId:null,transform:{mode:null,handle:null,startMouse:{},startEl:null,startBounds:null,center:{}},
   clicks:0,isTransforming:false,isDrawing:false,isPanning:false,panStart:{x:0,y:0},prevTool:null,tempPan:false,panDidMove:false,panButton:0,
-  inlineEditingId:null,rightClickPos:{},pendingPlace:null,editArmed:null,hoveredId:null,hoveredTextSide:null,spotlight:false,spotlightShape:"circle",spotlightDarkness:0.65,spotlightSize:220,alignmentGuides:[],wipeConfirm:null,
+  inlineEditingId:null,rightClickPos:{},pendingPlace:null,editArmed:null,hoveredId:null,hoveredTextSide:null,hoveredHandle:null,spotlight:false,spotlightShape:"circle",spotlightDarkness:0.65,spotlightSize:220,alignmentGuides:[],wipeConfirm:null,
   lastMouse:{x:innerWidth/2,y:innerHeight/2,wx:0,wy:0},toolbarPos:"bottom",
   eraseTouched:false,eraseDidPush:false,hasMouseMoved:false,fireParticles:[],internalClipboard:null,
   whiteboards:[],currentBoardId:null,saveTimeout:null,swipe:{active:false,startY:0},_miniWorld:null,
@@ -2140,10 +2140,11 @@ function drawMultiSelectionUnified(ids){
   ctx.strokeRect(b.x-pad,b.y-pad,b.w+pad*2,b.h+pad*2);
   ctx.setLineDash([]);
   const hs=5.5/z;
-  function handle(x,y){
+  function handle(x,y,isHovered=false){
+    const r=isHovered ? hs*1.12 : hs;
     ctx.beginPath();
-    ctx.arc(x,y,hs,0,Math.PI*2);
-    ctx.fillStyle="#ffffff";
+    ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fillStyle=isHovered?"#2563eb":"#ffffff";
     ctx.strokeStyle="#2563eb";
     ctx.lineWidth=1.5/z;
     ctx.fill();
@@ -2159,12 +2160,18 @@ function drawMultiSelectionUnified(ids){
     {x:b.x-pad,y:b.y+b.h/2},
     {x:b.x+b.w+pad,y:b.y+b.h/2}
   ];
-  corners.forEach(pt=>handle(pt.x,pt.y));
-  sides.forEach(pt=>handle(pt.x,pt.y));
+  corners.forEach((pt,i)=>{
+    const isHovered = (state.hoveredHandle && state.hoveredHandle.isMulti && state.hoveredHandle.type === "corner" && state.hoveredHandle.idx === i) ||
+                      (state.isTransforming && state.transform.mode === "resizeMulti" && state.transform.handle && state.transform.handle.idx === i);
+    handle(pt.x,pt.y,isHovered);
+  });
+  sides.forEach(pt=>handle(pt.x,pt.y,false));
   const rhX=b.x+b.w/2, rhY=b.y+b.h+pad+20/z;
   ctx.strokeStyle="#2563eb"; ctx.lineWidth=1.25/z;
   ctx.beginPath(); ctx.moveTo(rhX,b.y+b.h+pad+2/z); ctx.lineTo(rhX,rhY-hs-1/z); ctx.stroke();
-  handle(rhX,rhY);
+  const isRotHovered = (state.hoveredHandle && state.hoveredHandle.isMulti && state.hoveredHandle.type === "rot") ||
+                       (state.isTransforming && state.transform.mode === "rotateMulti");
+  handle(rhX,rhY,isRotHovered);
   ctx.restore();
   state._multiHandles={corners,sides,rot:{x:rhX,y:rhY},center:{x:cx,y:cy},bounds:b};
 }
@@ -2217,9 +2224,10 @@ function drawSelection(el){
   const z=Math.max(0.05,state.camera.zoom);
   const pad=(isText?6:3)/z;
   const hs=5/z;
-  function handle(x,y){
-    ctx.beginPath(); ctx.arc(x,y,hs,0,Math.PI*2);
-    ctx.fillStyle="#fff"; ctx.strokeStyle="#2563eb"; ctx.lineWidth=1.4/z;
+  function handle(x,y,isHovered=false){
+    const r=isHovered ? hs*1.12 : hs;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fillStyle=isHovered?"#2563eb":"#fff"; ctx.strokeStyle="#2563eb"; ctx.lineWidth=1.4/z;
     ctx.fill(); ctx.stroke();
   }
   ctx.strokeStyle="#2563eb";
@@ -2281,12 +2289,18 @@ function drawSelection(el){
     {x:b.x-pad,y:b.y+b.h/2},
     {x:b.x+b.w+pad,y:b.y+b.h/2}
   ];
-  corners.forEach(h=>handle(h.x,h.y));
-  if(!isText) sides.forEach(h=>handle(h.x,h.y));
+  corners.forEach((h,i)=>{
+    const isHovered = (state.hoveredHandle && !state.hoveredHandle.isMulti && state.hoveredHandle.elId === el.id && state.hoveredHandle.type === "corner" && state.hoveredHandle.idx === i) ||
+                      (state.isTransforming && state.selectedId === el.id && state.transform.mode === "resize" && state.transform.handle && state.transform.handle.idx === i);
+    handle(h.x,h.y,isHovered);
+  });
+  if(!isText) sides.forEach(h=>handle(h.x,h.y,false));
   const rhX=b.x+b.w/2,rhY=b.y+b.h+pad+20/z;
   ctx.strokeStyle="#2563eb"; ctx.lineWidth=1.25/z;
   ctx.beginPath();ctx.moveTo(rhX,b.y+b.h+pad+2/z);ctx.lineTo(rhX,rhY-hs-1/z);ctx.stroke();
-  handle(rhX,rhY);
+  const isRotHovered = (state.hoveredHandle && !state.hoveredHandle.isMulti && state.hoveredHandle.elId === el.id && state.hoveredHandle.type === "rot") ||
+                       (state.isTransforming && state.selectedId === el.id && state.transform.mode === "rotate");
+  handle(rhX,rhY,isRotHovered);
   ctx.restore();
   el._handles={corners,sides:isText?[]:sides,rot:{x:rhX,y:rhY},center:{x:cx,y:cy}};
 }
@@ -2690,8 +2704,8 @@ function positionToolbar(){
   if(sel && sel.type==="sticky" && state.selectedIds.length<=1) positionStickyRail(sel);
 }
 function deselect(){
-  if(state.selectedId||state.editArmed||state.selectedIds.length||state.hoveredTextSide){
-    state.selectedId=null; state.selectedIds=[]; state.editArmed=null; state.hoveredTextSide=null; hideToolbar(); render();
+  if(state.selectedId||state.editArmed||state.selectedIds.length||state.hoveredTextSide||state.hoveredHandle){
+    state.selectedId=null; state.selectedIds=[]; state.editArmed=null; state.hoveredTextSide=null; state.hoveredHandle=null; hideToolbar(); render();
   }
 }
 
@@ -2812,9 +2826,13 @@ function createInlineEditor(wp,existing=null,opts={}){
   showToolbar(existing, {compact: !!existing._fresh});
   render();
   setTimeout(()=>{
-    inlineEditor.focus();
-    if(opts.selectAll) document.execCommand("selectAll",false,null);
-    else placeCaretAtEnd(inlineEditor);
+    if(inlineEditor && typeof inlineEditor.focus === "function"){
+      try {
+        inlineEditor.focus();
+        if(opts.selectAll) document.execCommand("selectAll",false,null);
+        else placeCaretAtEnd(inlineEditor);
+      } catch(e){}
+    }
   },10);
   inlineEditor.addEventListener("keydown",e=>{
     if(e.key==="Escape"){e.preventDefault();commitInlineEditor();return;}
@@ -4303,12 +4321,24 @@ addEventListener("pointermove",e=>{
   }
   if(state.tool==="select"&&!state.isTransforming){
     let nextHoveredSide = null;
+    let nextHoveredHandle = null;
     if(state.selectedIds.length>1){
       if(state.hoveredTextSide){
         state.hoveredTextSide = null;
         scheduleRender();
       }
       const hh=hitHandles(null,wPos);
+      if(hh && hh.type==="corner"){
+        nextHoveredHandle = { isMulti: true, type: "corner", idx: hh.idx };
+      } else if(hh && hh.mode==="rotateMulti"){
+        nextHoveredHandle = { isMulti: true, type: "rot" };
+      }
+      const prevH = state.hoveredHandle;
+      const handleChanged = (!prevH && nextHoveredHandle) || (prevH && !nextHoveredHandle) || (prevH && nextHoveredHandle && (prevH.isMulti !== nextHoveredHandle.isMulti || prevH.type !== nextHoveredHandle.type || prevH.idx !== nextHoveredHandle.idx));
+      if(handleChanged){
+        state.hoveredHandle = nextHoveredHandle;
+        scheduleRender();
+      }
       if(hh){
         if(hh.mode==="rotateMulti") container.style.cursor="grab";
         else if(hh.type==="side") container.style.cursor="ew-resize";
@@ -4325,10 +4355,21 @@ addEventListener("pointermove",e=>{
         if(hh && hh.type==="side" && sel.type==="text"){
           nextHoveredSide = { elId: sel.id, side: hh.idx };
         }
+        if(hh && hh.type==="corner"){
+          nextHoveredHandle = { elId: sel.id, type: "corner", idx: hh.idx };
+        } else if(hh && hh.mode==="rotate"){
+          nextHoveredHandle = { elId: sel.id, type: "rot" };
+        }
         const prev = state.hoveredTextSide;
         const changed = (!prev && nextHoveredSide) || (prev && !nextHoveredSide) || (prev && nextHoveredSide && (prev.elId !== nextHoveredSide.elId || prev.side !== nextHoveredSide.side));
         if(changed){
           state.hoveredTextSide = nextHoveredSide;
+          scheduleRender();
+        }
+        const prevH = state.hoveredHandle;
+        const handleChanged = (!prevH && nextHoveredHandle) || (prevH && !nextHoveredHandle) || (prevH && nextHoveredHandle && (prevH.elId !== nextHoveredHandle.elId || prevH.type !== nextHoveredHandle.type || prevH.idx !== nextHoveredHandle.idx));
+        if(handleChanged){
+          state.hoveredHandle = nextHoveredHandle;
           scheduleRender();
         }
         if(hh){
@@ -4345,10 +4386,18 @@ addEventListener("pointermove",e=>{
           state.hoveredTextSide = null;
           scheduleRender();
         }
+        if(state.hoveredHandle){
+          state.hoveredHandle = null;
+          scheduleRender();
+        }
       }
     } else {
       if(state.hoveredTextSide){
         state.hoveredTextSide = null;
+        scheduleRender();
+      }
+      if(state.hoveredHandle){
+        state.hoveredHandle = null;
         scheduleRender();
       }
     }
@@ -5771,7 +5820,15 @@ function openTimerEditModal(el){
   const ss = String(rem % 60).padStart(2, "0");
   input.value = `${mm}:${ss}`;
   modal.classList.remove("hidden");
-  setTimeout(() => { input.focus(); input.select(); }, 50);
+  setTimeout(() => {
+    const elInput = document.getElementById("manual-timer-input") || input;
+    if (elInput && typeof elInput.focus === "function") {
+      try {
+        elInput.focus();
+        if (typeof elInput.select === "function") elInput.select();
+      } catch(e){}
+    }
+  }, 50);
 }
 function closeTimerEditModal(){
   const modal = document.getElementById("timer-edit-modal");

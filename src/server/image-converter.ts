@@ -1,8 +1,9 @@
 import { GoogleGenAI } from "@google/genai";
+import { runOcrAndComputerVision } from "./ocr-cv-pipeline";
 
 const AI_GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 
-function getAiKey(): { type: "gemini" | "lovable"; key: string } {
+function getAiKey(): { type: "gemini" | "lovable"; key: string } | null {
   const geminiKey = process.env["GEMINI_API_KEY"];
   if (geminiKey) {
     return { type: "gemini", key: geminiKey };
@@ -11,9 +12,8 @@ function getAiKey(): { type: "gemini" | "lovable"; key: string } {
   if (lovableKey) {
     return { type: "lovable", key: lovableKey };
   }
-  throw new Error("Gemini API key is not configured. Please set GEMINI_API_KEY.");
+  return null;
 }
-
 
 export interface ConvertImageRequest {
   imageBase64: string;
@@ -104,6 +104,7 @@ export interface ConversionResponse {
   imageWidth: number;
   imageHeight: number;
   objects: DetectedObject[];
+  source?: "ocr-cv" | "gemini-fallback";
   counts: {
     text: number;
     sticky: number;
@@ -130,7 +131,6 @@ function cleanErrorMessage(rawError: unknown): string {
   if (!rawError) return "Unknown error occurred during conversion.";
   const str = rawError instanceof Error ? rawError.message : String(rawError);
 
-  // Try extracting error message from JSON string like ApiError: {"error": {"message": "..."}}
   try {
     const jsonMatch = str.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
@@ -146,7 +146,6 @@ function cleanErrorMessage(rawError: unknown): string {
     // Ignore JSON parsing errors
   }
 
-  // Clean prefix if any
   return str.replace(/^ApiError:\s*/i, "").trim();
 }
 
@@ -166,15 +165,92 @@ async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function convertWhiteboardImage(req: ConvertImageRequest): Promise<ConversionResponse> {
-  const auth = getAiKey();
-  const { imageBase64, mimeType, width, height } = req;
+function compileConversionResponse(
+  title: string,
+  width: number,
+  height: number,
+  validObjects: DetectedObject[],
+  source: "ocr-cv" | "gemini-fallback" = "ocr-cv"
+): ConversionResponse {
+  let textCount = 0;
+  let stickyCount = 0;
+  let shapesCount = 0;
+  let connectorsCount = 0;
+  let drawingsCount = 0;
+  let imagesCount = 0;
 
-  // Clean base64 string if data URL prefix was passed
+  for (const obj of validObjects) {
+    if (obj.type === "text") textCount++;
+    else if (obj.type === "sticky") stickyCount++;
+    else if (obj.type === "shape") shapesCount++;
+    else if (obj.type === "connector") connectorsCount++;
+    else if (obj.type === "drawing") drawingsCount++;
+    else if (obj.type === "embeddedImage") imagesCount++;
+  }
+
+  return {
+    title,
+    imageWidth: width,
+    imageHeight: height,
+    objects: validObjects,
+    source,
+    counts: {
+      text: textCount,
+      sticky: stickyCount,
+      shapes: shapesCount,
+      connectors: connectorsCount,
+      drawings: drawingsCount,
+      embeddedImages: imagesCount,
+      total: validObjects.length,
+    },
+  };
+}
+
+export async function convertWhiteboardImage(req: ConvertImageRequest): Promise<ConversionResponse> {
+  const { imageBase64, mimeType, width, height } = req;
   const cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, "");
+
+  // 1. OCR + Computer Vision Stage (Fast & Deterministic)
+  let ocrCvResult: Awaited<ReturnType<typeof runOcrAndComputerVision>> | null = null;
+  try {
+    ocrCvResult = await runOcrAndComputerVision(req);
+    // If OCR + CV is confident, return immediately without calling Gemini
+    if (ocrCvResult && ocrCvResult.isConfident && ocrCvResult.objects.length > 0) {
+      return compileConversionResponse(
+        ocrCvResult.title || "Imported Whiteboard",
+        width,
+        height,
+        ocrCvResult.objects,
+        "ocr-cv"
+      );
+    }
+  } catch (ocrErr) {
+    console.warn("OCR/CV preliminary pass caught error, proceeding to AI fallback:", ocrErr);
+  }
+
+  // 2. Gemini AI Fallback
+  const auth = getAiKey();
+  if (!auth) {
+    // If no AI key is configured, check if we have usable OCR/CV results
+    if (ocrCvResult && ocrCvResult.objects.length > 0) {
+      return compileConversionResponse(
+        ocrCvResult.title || "Imported Whiteboard",
+        width,
+        height,
+        ocrCvResult.objects,
+        "ocr-cv"
+      );
+    }
+    throw new Error("Gemini API key is not configured. Please set GEMINI_API_KEY.");
+  }
+
+  const ocrContextPrompt = ocrCvResult && ocrCvResult.rawOcrText
+    ? `\n\nPreliminary OCR detected text tokens in the image:\n${ocrCvResult.rawOcrText}\nUse this OCR context to ensure exact spelling, wording, and positioning.`
+    : "";
 
   const prompt = `You are a precision computer vision whiteboard and diagram reconstruction engine.
 Analyze this whiteboard image / diagram screenshot (dimensions: ${width}x${height} pixels) and break it down into native vector whiteboard objects.
+${ocrContextPrompt}
 
 Coordinate system:
 - Use image pixel coordinates (X from 0 to ${width}, Y from 0 to ${height}).
@@ -330,7 +406,19 @@ Output STRICT JSON in this exact structure:
     }
   }
 
+  // Graceful fallback: If Gemini failed but OCR/CV yielded usable results, use OCR/CV!
   if (!responseText) {
+    if (ocrCvResult && ocrCvResult.objects.length > 0) {
+      console.info("Gemini AI was unavailable; gracefully falling back to deterministic OCR/CV results.");
+      return compileConversionResponse(
+        ocrCvResult.title || "Imported Whiteboard",
+        width,
+        height,
+        ocrCvResult.objects,
+        "ocr-cv"
+      );
+    }
+
     const cleanMsg = cleanErrorMessage(lastError);
     if (isQuotaOrRateLimitError(cleanMsg)) {
       throw new Error("AI Vision rate limit reached. Please wait a few seconds and try again, or configure your GEMINI_API_KEY.");
@@ -348,18 +436,20 @@ Output STRICT JSON in this exact structure:
     parsed = JSON.parse(cleaned);
   } catch (err) {
     console.error("Failed to parse Gemini vision response as JSON:", responseText, err);
+    if (ocrCvResult && ocrCvResult.objects.length > 0) {
+      return compileConversionResponse(
+        ocrCvResult.title || "Imported Whiteboard",
+        width,
+        height,
+        ocrCvResult.objects,
+        "ocr-cv"
+      );
+    }
     throw new Error("Could not parse image analysis response from AI vision service.");
   }
 
   const rawObjects = Array.isArray(parsed.objects) ? parsed.objects : [];
   const validObjects: DetectedObject[] = [];
-
-  let textCount = 0;
-  let stickyCount = 0;
-  let shapesCount = 0;
-  let connectorsCount = 0;
-  let drawingsCount = 0;
-  let imagesCount = 0;
 
   for (const obj of rawObjects) {
     if (!obj || typeof obj !== "object" || !("type" in obj)) continue;
@@ -381,7 +471,6 @@ Output STRICT JSON in this exact structure:
             underline: Boolean(obj.underline),
             rotation: Math.round(Number(obj.rotation) || 0),
           });
-          textCount++;
         }
         break;
       }
@@ -398,7 +487,6 @@ Output STRICT JSON in this exact structure:
           fontSize: Math.max(10, Math.min(48, Math.round(Number(obj.fontSize) || 16))),
           rotation: Math.round(Number(obj.rotation) || 0),
         });
-        stickyCount++;
         break;
       }
       case "shape": {
@@ -416,7 +504,6 @@ Output STRICT JSON in this exact structure:
           strokeWidth: Math.max(1, Math.min(20, Math.round(Number(obj.strokeWidth) || 2))),
           rotation: Math.round(Number(obj.rotation) || 0),
         });
-        shapesCount++;
         break;
       }
       case "connector": {
@@ -432,7 +519,6 @@ Output STRICT JSON in this exact structure:
           color: typeof obj.color === "string" ? obj.color : "#1E1E1E",
           strokeWidth: Math.max(1, Math.min(20, Math.round(Number(obj.strokeWidth) || 2))),
         });
-        connectorsCount++;
         break;
       }
       case "drawing": {
@@ -449,7 +535,6 @@ Output STRICT JSON in this exact structure:
             strokeWidth: Math.max(1, Math.min(30, Math.round(Number(obj.strokeWidth) || 4))),
             isHighlighter: Boolean(obj.isHighlighter),
           });
-          drawingsCount++;
         }
         break;
       }
@@ -465,26 +550,28 @@ Output STRICT JSON in this exact structure:
             height: Math.min(height, h),
             ...(typeof obj.description === "string" ? { description: obj.description } : {}),
           });
-          imagesCount++;
         }
         break;
       }
     }
   }
 
-  return {
-    title: parsed.title || "Converted Whiteboard",
-    imageWidth: width,
-    imageHeight: height,
-    objects: validObjects,
-    counts: {
-      text: textCount,
-      sticky: stickyCount,
-      shapes: shapesCount,
-      connectors: connectorsCount,
-      drawings: drawingsCount,
-      embeddedImages: imagesCount,
-      total: validObjects.length,
-    },
-  };
+  // If Gemini produced zero valid objects but OCR/CV had objects, use OCR/CV
+  if (validObjects.length === 0 && ocrCvResult && ocrCvResult.objects.length > 0) {
+    return compileConversionResponse(
+      ocrCvResult.title || "Imported Whiteboard",
+      width,
+      height,
+      ocrCvResult.objects,
+      "ocr-cv"
+    );
+  }
+
+  return compileConversionResponse(
+    parsed.title || "Converted Whiteboard",
+    width,
+    height,
+    validObjects,
+    "gemini-fallback"
+  );
 }
