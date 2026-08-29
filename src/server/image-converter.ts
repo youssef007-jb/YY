@@ -8,7 +8,14 @@ function getGemini(): GoogleGenAI {
     throw new Error("GEMINI_API_KEY environment variable is not configured. Please set your Gemini API key.");
   }
   if (!genAiClient) {
-    genAiClient = new GoogleGenAI({ apiKey });
+    genAiClient = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
   }
   return genAiClient;
 }
@@ -113,12 +120,10 @@ export interface ConversionResponse {
   };
 }
 
-// Candidate models in order of preference and availability
+// Candidate models in order of capability, quality, and availability
 const CANDIDATE_MODELS = [
-  "gemini-3.6-flash",
-  "gemini-flash-latest",
   "gemini-3.7-flash",
-  "gemini-3.5-flash",
+  "gemini-flash-latest",
   "gemini-3.1-flash-lite",
 ];
 
@@ -146,6 +151,18 @@ function cleanErrorMessage(rawError: unknown): string {
   return str.replace(/^ApiError:\s*/i, "").trim();
 }
 
+function isQuotaOrRateLimitError(errStr: string): boolean {
+  return (
+    errStr.includes("RESOURCE_EXHAUSTED") ||
+    errStr.includes("429") ||
+    errStr.includes("quota") ||
+    errStr.includes("Quota") ||
+    errStr.includes("rate limit") ||
+    errStr.includes("Rate limit") ||
+    errStr.includes("exceeded your current quota")
+  );
+}
+
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -166,7 +183,7 @@ Coordinate system:
 
 Identify and extract all elements:
 1. TYPED / DIGITAL TEXT ("type": "text"):
-   - Read exact text accurately (keep multiline breaks with \n).
+   - Read exact text accurately (keep multiline breaks with \\n).
    - "x", "y", "width", "height", "fontSize" (approx in px), "color" (hex color like "#1E1E1E", "#2563EB", etc.), "bold" (boolean), "italic" (boolean), "rotation" (degrees, 0 if upright).
    - Do NOT invent text if OCR is blurry.
 
@@ -205,12 +222,14 @@ Output STRICT JSON in this exact structure:
 
   // Try candidate models with swift fallback
   for (const modelName of CANDIDATE_MODELS) {
+    const isCandidateRetryable = true;
     const maxRetries = 1;
+
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         if (attempt > 0) {
           // Brief pause before retry
-          await sleep(350);
+          await sleep(500);
         }
 
         const response = await ai.models.generateContent({
@@ -246,8 +265,9 @@ Output STRICT JSON in this exact structure:
         const errStr = String(err?.message || err);
         console.warn(`Model ${modelName} attempt ${attempt + 1} failed: ${errStr}`);
 
-        // If not temporary load or not found, try next model immediately
-        if (errStr.includes("NOT_FOUND") || errStr.includes("404")) {
+        // If the model hits quota exhaustion, 404, or is unsupported, do NOT burn retries on it
+        if (isQuotaOrRateLimitError(errStr) || errStr.includes("NOT_FOUND") || errStr.includes("404")) {
+          console.warn(`Skipping remaining retries for ${modelName} due to quota limit or unavailability; falling back to next candidate model.`);
           break;
         }
       }
@@ -260,8 +280,12 @@ Output STRICT JSON in this exact structure:
 
   if (!responseText) {
     const cleanMsg = cleanErrorMessage(lastError);
+    if (isQuotaOrRateLimitError(cleanMsg)) {
+      throw new Error("AI Vision rate limit reached. Please wait a few seconds and try again, or attach your personal Gemini API key.");
+    }
     throw new Error(cleanMsg || "The AI vision service is currently experiencing high demand. Please try again shortly.");
   }
+
   let parsed: { title?: string; objects?: DetectedObject[] };
 
   try {
