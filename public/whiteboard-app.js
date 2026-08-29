@@ -2967,6 +2967,9 @@ function pasteTextAsObject(text, wx, wy){
   wx = target.x;
   wy = target.y;
 
+  // Strip rich text / HTML tags and normalize line endings
+  text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
   try{
     const parsed = JSON.parse(text);
     if(Array.isArray(parsed) && parsed[0]?.type){
@@ -2981,8 +2984,11 @@ function pasteTextAsObject(text, wx, wy){
     }
   }catch(err){}
 
+  // Brand new text item using current tool defaults, ignoring any previously copied styling
+  state.internalClipboard = null;
+
   pushUndo();
-  const srcStyle = (state.internalClipboard && state.internalClipboard.type === "text") ? state.internalClipboard : null;
+  const readable = getReadableSize();
   const newEl = {
     id: genId(),
     type: "text",
@@ -2991,12 +2997,12 @@ function pasteTextAsObject(text, wx, wy){
     y: wy,
     w: 220,
     h: 40,
-    color: srcStyle?.color || DEFAULT_TEXT_COLOR,
-    size: srcStyle?.size || getReadableSize(),
-    font: srcStyle?.font || "Segoe UI,Inter,system-ui,sans-serif",
-    bold: srcStyle ? !!srcStyle.bold : false,
-    italic: srcStyle ? !!srcStyle.italic : false,
-    underline: srcStyle ? !!srcStyle.underline : false,
+    color: DEFAULT_TEXT_COLOR,
+    size: readable,
+    font: "Segoe UI,Inter,system-ui,sans-serif",
+    bold: false,
+    italic: false,
+    underline: false,
     rotation: 0,
     isPlaceholder: false
   };
@@ -3586,18 +3592,41 @@ addEventListener("pointermove",e=>{
         if(!sb) return;
         const idx=state.transform.handle.idx;
         const isSide=state.transform.mode==="sideMulti";
+        const MIN_DIM = 20;
         let nx=sb.x, ny=sb.y, nw=sb.w, nh=sb.h;
         if(!isSide){
-          if(idx===0){ nx=wPos.x; ny=wPos.y; nw=sb.x+sb.w-nx; nh=sb.y+sb.h-ny; }
-          else if(idx===1){ ny=wPos.y; nw=wPos.x-sb.x; nh=sb.y+sb.h-ny; }
-          else if(idx===2){ nw=wPos.x-sb.x; nh=wPos.y-sb.y; }
-          else { nx=wPos.x; nw=sb.x+sb.w-nx; nh=wPos.y-sb.y; }
+          if(idx===0){
+            nx = Math.min(wPos.x, sb.x + sb.w - MIN_DIM);
+            ny = Math.min(wPos.y, sb.y + sb.h - MIN_DIM);
+            nw = sb.x + sb.w - nx;
+            nh = sb.y + sb.h - ny;
+          } else if(idx===1){
+            nx = sb.x;
+            ny = Math.min(wPos.y, sb.y + sb.h - MIN_DIM);
+            nw = Math.max(wPos.x, sb.x + MIN_DIM) - sb.x;
+            nh = sb.y + sb.h - ny;
+          } else if(idx===2){
+            nx = sb.x;
+            ny = sb.y;
+            nw = Math.max(wPos.x, sb.x + MIN_DIM) - sb.x;
+            nh = Math.max(wPos.y, sb.y + MIN_DIM) - sb.y;
+          } else {
+            nx = Math.min(wPos.x, sb.x + sb.w - MIN_DIM);
+            ny = sb.y;
+            nw = sb.x + sb.w - nx;
+            nh = Math.max(wPos.y, sb.y + MIN_DIM) - sb.y;
+          }
         } else {
-          if(idx===0){ nx=wPos.x; nw=sb.x+sb.w-nx; }
-          else { nw=wPos.x-sb.x; }
+          if(idx===0){
+            nx = Math.min(wPos.x, sb.x + sb.w - MIN_DIM);
+            nw = sb.x + sb.w - nx;
+          } else {
+            nx = sb.x;
+            nw = Math.max(wPos.x, sb.x + MIN_DIM) - sb.x;
+          }
         }
-        nw=Math.max(20,nw);
-        nh=Math.max(20,nh);
+        nw=Math.max(MIN_DIM,nw);
+        nh=Math.max(MIN_DIM,nh);
         const scaleX=nw/Math.max(1,sb.w);
         const scaleY=isSide?1:(nh/Math.max(1,sb.h));
         (state.transform.startMulti||[]).forEach(st=>{
@@ -3681,10 +3710,11 @@ addEventListener("pointermove",e=>{
       let dx=wPos.x-state.transform.startMouse.x, dy=wPos.y-state.transform.startMouse.y;
       state.alignmentGuides = [];
       if(!el.points && !e.shiftKey){
-        const testX = state.transform.startEl.x + dx;
-        const testY = state.transform.startEl.y + dy;
-        const testW = el.w || 100;
-        const testH = el.h || 100;
+        const startBounds = state.transform.startBounds || getBounds(state.transform.startEl || el);
+        const testX = startBounds.x + dx;
+        const testY = startBounds.y + dy;
+        const testW = startBounds.w;
+        const testH = startBounds.h;
         const SNAP_DIST = 6 / state.camera.zoom;
         
         let bestSnapX = null, bestDistX = SNAP_DIST;
@@ -3734,11 +3764,11 @@ addEventListener("pointermove",e=>{
         });
 
         if(bestSnapX !== null){
-          dx = bestSnapX - state.transform.startEl.x;
+          dx = bestSnapX - startBounds.x;
           if(guideX) state.alignmentGuides.push(guideX);
         }
         if(bestSnapY !== null){
-          dy = bestSnapY - state.transform.startEl.y;
+          dy = bestSnapY - startBounds.y;
           if(guideY) state.alignmentGuides.push(guideY);
         }
       }
@@ -3749,18 +3779,53 @@ addEventListener("pointermove",e=>{
     }
     if(state.transform.mode==="resize"||state.transform.mode==="side"){
       const sb=state.transform.startBounds,idx=state.transform.handle.idx,isSide=state.transform.mode==="side";
+      const MIN_W = el.type === "sticky" ? 80 : 10;
+      const MIN_H = 10;
       let nx=sb.x,ny=sb.y,nw=sb.w,nh=sb.h;
+
       if(!isSide){
-        if(idx===0){nx=wPos.x;ny=wPos.y;nw=sb.x+sb.w-nx;nh=sb.y+sb.h-ny;}
-        else if(idx===1){ny=wPos.y;nw=wPos.x-sb.x;nh=sb.y+sb.h-ny;}
-        else if(idx===2){nw=wPos.x-sb.x;nh=wPos.y-sb.y;}
-        else{nx=wPos.x;nw=sb.x+sb.w-nx;nh=wPos.y-sb.y;}
-      }else{
-        if(idx===0){nx=wPos.x;nw=sb.x+sb.w-nx;}else{nw=wPos.x-sb.x;}
-        nw=Math.max(24,nw);
-        if(el.type==="sticky"){el.w=Math.max(80,nw);el.x=nx;render();positionToolbar();if(inlineBox) updateInlineEditorTransform();return;}
+        if(idx===0){
+          nx = Math.min(wPos.x, sb.x + sb.w - MIN_W);
+          ny = Math.min(wPos.y, sb.y + sb.h - MIN_H);
+          nw = sb.x + sb.w - nx;
+          nh = sb.y + sb.h - ny;
+        } else if(idx===1){
+          nx = sb.x;
+          ny = Math.min(wPos.y, sb.y + sb.h - MIN_H);
+          nw = Math.max(wPos.x, sb.x + MIN_W) - sb.x;
+          nh = sb.y + sb.h - ny;
+        } else if(idx===2){
+          nx = sb.x;
+          ny = sb.y;
+          nw = Math.max(wPos.x, sb.x + MIN_W) - sb.x;
+          nh = Math.max(wPos.y, sb.y + MIN_H) - sb.y;
+        } else {
+          nx = Math.min(wPos.x, sb.x + sb.w - MIN_W);
+          ny = sb.y;
+          nw = sb.x + sb.w - nx;
+          nh = Math.max(wPos.y, sb.y + MIN_H) - sb.y;
+        }
+      } else {
+        if(idx===0){
+          nx = Math.min(wPos.x, sb.x + sb.w - MIN_W);
+          nw = sb.x + sb.w - nx;
+        } else {
+          nx = sb.x;
+          nw = Math.max(wPos.x, sb.x + MIN_W) - sb.x;
+        }
+        if(el.type==="sticky"){
+          el.w = Math.max(80, nw);
+          el.x = nx;
+          render();
+          positionToolbar();
+          if(inlineBox) updateInlineEditorTransform();
+          return;
+        }
       }
-      nw=Math.max(20,nw);nh=Math.max(20,nh);
+
+      nw = Math.max(MIN_W, nw);
+      nh = Math.max(MIN_H, nh);
+
       if(el.type==="text"){
         const startSize=state.transform.startEl.size||18;
         const scale=isSide?(nw/Math.max(1,sb.w)):((nw/Math.max(1,sb.w)+nh/Math.max(1,sb.h))/2);
@@ -3773,10 +3838,21 @@ addEventListener("pointermove",e=>{
         else { el.x=sb.x+sb.w-el.w; el.y=sb.y; }
         render();positionToolbar();if(inlineBox) updateInlineEditorTransform();return;
       }
-      if(LINE_TYPES.includes(el.type)){el.w=nw;el.h=nh;if(idx===0||idx===3){el.x=nx;el.y=ny;}else if(idx===1){el.x=sb.x;el.y=ny;}}
-      else{
-        if(el.points){const sx=nw/sb.w,sy=isSide?1:nh/sb.h;el.points=state.transform.startEl.points.map(p=>({x:nx+(p.x-sb.x)*sx,y:ny+(p.y-sb.y)*sy}));}
-        else{el.x=nx;el.y=ny;el.w=Math.abs(nw);el.h=Math.abs(nh);if((el.type==="text"||el.type==="sticky")&&!isSide){const scale=(nw/sb.w+nh/sb.h)/2;el.size=Math.max(10,(state.transform.startEl.size||(el.type==="sticky"?16:18))*scale);}}
+      if(LINE_TYPES.includes(el.type)){
+        el.w=nw; el.h=nh;
+        if(idx===0||idx===3){ el.x=nx; el.y=ny; }
+        else if(idx===1){ el.x=sb.x; el.y=ny; }
+      } else {
+        if(el.points){
+          const sx=nw/sb.w, sy=isSide?1:nh/sb.h;
+          el.points=state.transform.startEl.points.map(p=>({x:nx+(p.x-sb.x)*sx,y:ny+(p.y-sb.y)*sy}));
+        } else {
+          el.x=nx; el.y=ny; el.w=Math.abs(nw); el.h=Math.abs(nh);
+          if((el.type==="text"||el.type==="sticky")&&!isSide){
+            const scale=(nw/sb.w+nh/sb.h)/2;
+            el.size=Math.max(10,(state.transform.startEl.size||(el.type==="sticky"?16:18))*scale);
+          }
+        }
       }
       render();positionToolbar();return;
     }

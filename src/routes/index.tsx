@@ -546,6 +546,11 @@ function HomePage() {
   const [isBatchDownloading, setIsBatchDownloading] = useState(false);
   const [uploadPrompt, setUploadPrompt] = useState<{
     fileCount: number;
+    smartCount: number;
+    normalCount: number;
+    smartBoards: BoardRecord[];
+    normalBoards: BoardRecord[];
+    normalFiles: File[];
     combinedBoard: BoardRecord;
     separateBoards: BoardRecord[];
     rawFiles: File[];
@@ -830,40 +835,48 @@ function HomePage() {
     const isJsonFile = (f: File) => f.type === "application/json" || /\.json$/i.test(f.name);
 
     try {
-      const fileEntries: {
-        fileName: string;
-        boardTitle: string;
-        items: { name: string; src: string; w: number; h: number }[];
-        jsonBoard?: BoardRecord;
-      }[] = [];
+      const smartBoards: BoardRecord[] = [];
+      const normalBoards: BoardRecord[] = [];
+      const normalFiles: File[] = [];
+      const allImageItems: { name: string; src: string; w: number; h: number }[] = [];
+      const baseTime = Date.now();
 
-      for (const file of files) {
+      for (let idx = 0; idx < files.length; idx++) {
+        const file = files[idx]!;
+        const cleanName = stripFileExtension(file.name) || file.name || `Whiteboard ${idx + 1}`;
+        const cat = autoExtractPhaseAndWeek(cleanName);
+        const boardTime = baseTime + idx * 10;
+        const bId = genBoardId();
+
         if (isImageFile(file) && !isPdf(file)) {
           try {
             // Check if it's a Smart PNG with embedded canvas metadata
             const smartData = await extractSmartPngMetadata(file);
             if (smartData && Array.isArray(smartData.elements) && smartData.elements.length > 0) {
-              const cleanName = smartData.name || stripFileExtension(file.name) || file.name || "Whiteboard";
-              fileEntries.push({
-                fileName: file.name,
-                boardTitle: cleanName,
-                items: [],
-                jsonBoard: {
-                  id: genBoardId(),
-                  name: cleanName,
-                  createdAt: Date.now(),
-                  updatedAt: Date.now(),
-                  elements: smartData.elements,
-                  bgColor: smartData.bgColor || "#ffffff",
-                  theme: smartData.theme || "classlight",
-                  gridStyle: smartData.gridStyle || "none",
-                  gridSpacing: smartData.gridSpacing || 24,
-                  camera: smartData.camera || { x: 0, y: 0, zoom: 1 },
-                  toolbarPos: smartData["toolbarPos"] || "left",
-                  stickyAutoEdit: smartData["stickyAutoEdit"] ?? false,
-                  thumb: smartData["thumb"] ?? null,
-                },
-              });
+              const title = smartData.name || cleanName;
+              const smartCat = autoExtractPhaseAndWeek(title);
+              const smartBoard: BoardRecord = {
+                ...blankBoard(title),
+                id: bId,
+                name: title,
+                phase: smartData.phase || smartCat.phase,
+                week: smartData.week || smartCat.week,
+                phase_category: smartData.phase_category ?? smartCat.phase_category,
+                week_category: smartData.week_category ?? smartCat.week_category,
+                createdAt: boardTime,
+                updatedAt: boardTime,
+                needsFitToScreen: true,
+                elements: smartData.elements,
+                bgColor: smartData.bgColor || "#ffffff",
+                theme: smartData.theme || "classlight",
+                gridStyle: smartData.gridStyle || "none",
+                gridSpacing: smartData.gridSpacing || 24,
+                camera: smartData.camera || { x: 0, y: 0, zoom: 1 },
+                toolbarPos: (smartData as any)["toolbarPos"] || "bottom",
+                stickyAutoEdit: (smartData as any)["stickyAutoEdit"] ?? true,
+                thumb: (smartData as any)["thumb"] ?? null,
+              };
+              smartBoards.push(smartBoard);
               continue;
             }
 
@@ -895,26 +908,47 @@ function HomePage() {
               img.src = dataUrl;
             });
 
-            const cleanName = stripFileExtension(file.name) || file.name || "Image";
-            fileEntries.push({
-              fileName: file.name,
-              boardTitle: cleanName,
-              items: [{ name: cleanName, src: dataUrl, w: imgDim.w, h: imgDim.h }],
-            });
+            const imgItem = { name: cleanName, src: dataUrl, w: imgDim.w, h: imgDim.h };
+            allImageItems.push(imgItem);
+            normalFiles.push(file);
+
+            const normalBoard: BoardRecord = {
+              ...blankBoard(cleanName),
+              id: bId,
+              name: cleanName,
+              phase: cat.phase,
+              week: cat.week,
+              phase_category: cat.phase_category,
+              week_category: cat.week_category,
+              createdAt: boardTime,
+              updatedAt: boardTime,
+              needsFitToScreen: true,
+              elements: layoutImageElements([imgItem]),
+            };
+            normalBoards.push(normalBoard);
           } catch (e) {
             console.warn("Could not load image file:", file.name, e);
           }
         } else if (isPdf(file)) {
           try {
             const pages = await renderPdfToImages(file);
-            const cleanName = stripFileExtension(file.name) || file.name || "PDF Document";
-            if (pages.length > 0) {
-              fileEntries.push({
-                fileName: file.name,
-                boardTitle: cleanName,
-                items: pages,
-              });
-            }
+            normalFiles.push(file);
+            pages.forEach((p) => allImageItems.push(p));
+
+            const normalBoard: BoardRecord = {
+              ...blankBoard(cleanName),
+              id: bId,
+              name: cleanName,
+              phase: cat.phase,
+              week: cat.week,
+              phase_category: cat.phase_category,
+              week_category: cat.week_category,
+              createdAt: boardTime,
+              updatedAt: boardTime,
+              needsFitToScreen: true,
+              elements: layoutImageElements(pages),
+            };
+            normalBoards.push(normalBoard);
           } catch (e) {
             console.warn("Could not render PDF:", file.name, e);
           }
@@ -924,13 +958,28 @@ function HomePage() {
             const raw = JSON.parse(text);
             const items: BoardRecord[] = Array.isArray(raw) ? raw : [raw];
             for (const item of items) {
-              const boardName = item.name || stripFileExtension(file.name) || file.name || "Untitled";
-              fileEntries.push({
-                fileName: file.name,
-                boardTitle: boardName,
-                items: [],
-                jsonBoard: item,
-              });
+              const boardName = item.name || cleanName;
+              const jsonCat = autoExtractPhaseAndWeek(boardName);
+              let rawEls = Array.isArray(item.elements) ? item.elements : [];
+              if (rawEls.length === 0 && Array.isArray((item as any).layers) && (item as any).layers.length > 0) {
+                const layerEls = (item as any).layers[0]?.elements;
+                if (Array.isArray(layerEls)) rawEls = layerEls;
+              }
+              const smartBoard: BoardRecord = {
+                ...blankBoard(boardName),
+                ...item,
+                id: genBoardId(),
+                name: boardName,
+                phase: item.phase || jsonCat.phase,
+                week: item.week || jsonCat.week,
+                phase_category: item.phase_category ?? jsonCat.phase_category,
+                week_category: item.week_category ?? jsonCat.week_category,
+                createdAt: item.createdAt || boardTime,
+                updatedAt: boardTime,
+                needsFitToScreen: true,
+                elements: rawEls,
+              };
+              smartBoards.push(smartBoard);
             }
           } catch (e) {
             console.warn("Could not parse JSON:", file.name, e);
@@ -938,72 +987,26 @@ function HomePage() {
         }
       }
 
-      if (fileEntries.length === 0) {
+      const separateBoards = [...smartBoards, ...normalBoards];
+      if (separateBoards.length === 0) {
         setError("No valid images, PDFs, or whiteboard files could be extracted.");
         return;
       }
 
-      const baseTime = Date.now();
-
-      // 1. Build separate boards (one whiteboard per uploaded file)
-      const separateBoards: BoardRecord[] = fileEntries.map((entry, idx) => {
-        const boardTime = baseTime + idx * 10;
-        const title = entry.boardTitle;
-        const cat = autoExtractPhaseAndWeek(title);
-        const bId = genBoardId();
-
-        if (entry.jsonBoard) {
-          const jb = entry.jsonBoard;
-          let rawEls = Array.isArray(jb.elements) ? jb.elements : [];
-          if (rawEls.length === 0 && Array.isArray((jb as any).layers) && (jb as any).layers.length > 0) {
-            const layerEls = (jb as any).layers[0]?.elements;
-            if (Array.isArray(layerEls)) rawEls = layerEls;
-          }
-          return {
-            ...blankBoard(title),
-            ...jb,
-            id: bId,
-            name: title,
-            phase: jb.phase || cat.phase,
-            week: jb.week || cat.week,
-            phase_category: jb.phase_category ?? cat.phase_category,
-            week_category: jb.week_category ?? cat.week_category,
-            createdAt: jb.createdAt || boardTime,
-            updatedAt: boardTime,
-            elements: rawEls,
-          };
-        }
-
-        const elements = layoutImageElements(entry.items);
-        return {
-          ...blankBoard(title),
-          id: bId,
-          name: title,
-          phase: cat.phase,
-          week: cat.week,
-          phase_category: cat.phase_category,
-          week_category: cat.week_category,
-          createdAt: boardTime,
-          updatedAt: boardTime,
-          elements,
-        };
-      });
-
       // 2. Build combined board (all files arranged in 1 whiteboard)
       let combinedElements: any[] = [];
-      const allImageItems = fileEntries.flatMap((e) => e.items);
       if (allImageItems.length > 0) {
         combinedElements = layoutImageElements(allImageItems);
       } else {
-        combinedElements = fileEntries.flatMap((e) => (e.jsonBoard?.elements as any[]) || []);
+        combinedElements = smartBoards.flatMap((e) => e.elements || []);
       }
 
-      const firstTitle = fileEntries[0]?.boardTitle ?? "Untitled";
-      const combinedTitle = fileEntries.length === 1
+      const firstTitle = separateBoards[0]?.name ?? "Untitled";
+      const combinedTitle = separateBoards.length === 1
         ? firstTitle
-        : fileEntries.length <= 3
-        ? fileEntries.map((e) => e.boardTitle).join(", ")
-        : `${firstTitle} & ${fileEntries.length - 1} more`;
+        : separateBoards.length <= 3
+        ? separateBoards.map((e) => e.name).join(", ")
+        : `${firstTitle} & ${separateBoards.length - 1} more`;
 
       const combinedCat = autoExtractPhaseAndWeek(combinedTitle);
       const combinedBoard: BoardRecord = {
@@ -1014,8 +1017,8 @@ function HomePage() {
         week: combinedCat.week,
         phase_category: combinedCat.phase_category,
         week_category: combinedCat.week_category,
-        createdAt: baseTime + fileEntries.length * 10,
-        updatedAt: baseTime + fileEntries.length * 10,
+        createdAt: baseTime + separateBoards.length * 10,
+        updatedAt: baseTime + separateBoards.length * 10,
         elements: combinedElements,
       };
 
@@ -1038,7 +1041,12 @@ function HomePage() {
       }
 
       setUploadPrompt({
-        fileCount: fileEntries.length,
+        fileCount: files.length,
+        smartCount: smartBoards.length,
+        normalCount: normalFiles.length,
+        smartBoards,
+        normalBoards,
+        normalFiles,
         combinedBoard,
         separateBoards,
         rawFiles: files,
@@ -1051,36 +1059,62 @@ function HomePage() {
     }
   };
 
-  const handleConvertAll = () => {
-    if (!uploadPrompt || !uploadPrompt.rawFiles || uploadPrompt.rawFiles.length === 0) return;
-    const rawFiles = uploadPrompt.rawFiles;
+  const handleConvertAll = async () => {
+    if (!uploadPrompt) return;
+    const { smartBoards, normalFiles } = uploadPrompt;
     setUploadPrompt(null);
     setSearch("");
     setPhaseFilter(ALL_PHASES_VALUE);
 
-    const queue = new BatchConversionQueue(rawFiles, {
-      concurrency: 3,
-      onProgress: (prog) => {
-        setBatchProgress({ ...prog });
-      },
-      onItemCompleted: (board) => {
-        // First finished = first displayed! Reactively update boards list
-        setBoards((prev) => {
-          const list = prev || [];
-          const filtered = list.filter((b) => b.id !== board.id);
-          return [board, ...filtered];
-        });
-      },
-      onItemFailed: (errMsg, item) => {
-        console.warn(`Conversion failed for ${item.fileName}: ${errMsg}`);
-      },
-      onAllFinished: () => {
-        void refresh();
-      },
-    });
+    // 1. Immediately import all detected SmartPNGs/editable whiteboards into DB without conversion
+    if (smartBoards.length > 0) {
+      for (const sb of smartBoards) {
+        if (!sb.thumb && sb.elements && sb.elements.length > 0) {
+          try {
+            sb.thumb = await generateBoardThumbnail(sb);
+          } catch {
+            /* ignore */
+          }
+        }
+        await putBoard(sb);
+      }
+      // Reactively show smart boards on the dashboard immediately
+      setBoards((prev) => {
+        const existing = prev || [];
+        const ids = new Set(smartBoards.map((b) => b.id));
+        const filtered = existing.filter((b) => !ids.has(b.id));
+        return [...smartBoards, ...filtered];
+      });
+    }
 
-    queueRef.current = queue;
-    queue.start();
+    // 2. If there are normal files needing conversion, start the conversion queue
+    if (normalFiles.length > 0) {
+      const queue = new BatchConversionQueue(normalFiles, {
+        concurrency: 3,
+        onProgress: (prog) => {
+          setBatchProgress({ ...prog });
+        },
+        onItemCompleted: (board) => {
+          // First finished = first displayed! Reactively update boards list
+          setBoards((prev) => {
+            const list = prev || [];
+            const filtered = list.filter((b) => b.id !== board.id);
+            return [board, ...filtered];
+          });
+        },
+        onItemFailed: (errMsg, item) => {
+          console.warn(`Conversion failed for ${item.fileName}: ${errMsg}`);
+        },
+        onAllFinished: () => {
+          void refresh();
+        },
+      });
+
+      queueRef.current = queue;
+      queue.start();
+    } else {
+      await refresh();
+    }
   };
 
   const handleRetryItem = (itemId: string) => {
@@ -1093,6 +1127,11 @@ function HomePage() {
 
   const handleFallbackToImage = async (itemId: string) => {
     await queueRef.current?.fallbackToImage(itemId);
+    await refresh();
+  };
+
+  const handleSaveAllAsImage = async () => {
+    await queueRef.current?.fallbackAllFailedToImage();
     await refresh();
   };
 
@@ -1129,10 +1168,11 @@ function HomePage() {
 
   const handleBackToHomepage = async () => {
     if (!uploadPrompt) return;
-    const { separateBoards } = uploadPrompt;
+    const { smartBoards, normalBoards } = uploadPrompt;
     setUploadPrompt(null);
     try {
-      for (const board of separateBoards) {
+      // 1. SmartBoards are saved directly as editable whiteboards
+      for (const board of smartBoards) {
         if (!board.thumb && board.elements && board.elements.length > 0) {
           try {
             board.thumb = await generateBoardThumbnail(board);
@@ -1142,6 +1182,19 @@ function HomePage() {
         }
         await putBoard(board);
       }
+
+      // 2. NormalBoards are saved as standard image whiteboards without AI conversion
+      for (const board of normalBoards) {
+        if (!board.thumb && board.elements && board.elements.length > 0) {
+          try {
+            board.thumb = await generateBoardThumbnail(board);
+          } catch {
+            /* ignore */
+          }
+        }
+        await putBoard(board);
+      }
+
       const updatedList = await listBoards();
       setBoards(updatedList);
       setSearch("");
@@ -1691,14 +1744,24 @@ function HomePage() {
               <Upload className="h-5 w-5" />
             </div>
             <DialogTitle className="text-base font-bold">
-              {uploadPrompt?.fileCount === 1
+              {uploadPrompt?.smartCount && uploadPrompt?.smartCount > 0 && (!uploadPrompt?.normalCount || uploadPrompt?.normalCount === 0)
+                ? uploadPrompt.smartCount === 1
+                  ? "Editable Whiteboard Detected"
+                  : `${uploadPrompt.smartCount} Editable Whiteboards Detected`
+                : uploadPrompt?.fileCount === 1
                 ? "File Uploaded Successfully"
                 : `${uploadPrompt?.fileCount || 0} Files Uploaded Successfully`}
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              {uploadPrompt?.fileCount === 1
+              {uploadPrompt?.smartCount && uploadPrompt?.smartCount > 0 && uploadPrompt?.normalCount && uploadPrompt?.normalCount > 0
+                ? `${uploadPrompt.smartCount} editable whiteboard${uploadPrompt.smartCount > 1 ? "s" : ""} detected · ${uploadPrompt.normalCount} image${uploadPrompt.normalCount > 1 ? "s" : ""}/file${uploadPrompt.normalCount > 1 ? "s" : ""} require conversion`
+                : uploadPrompt?.smartCount && uploadPrompt?.smartCount > 0
+                ? uploadPrompt.smartCount === 1
+                  ? `"${uploadPrompt.separateBoards[0]?.name}" contains native editable whiteboard elements and will be imported directly.`
+                  : `All ${uploadPrompt.smartCount} files contain native editable whiteboard elements and will be imported directly.`
+                : uploadPrompt?.fileCount === 1
                 ? `"${uploadPrompt.separateBoards[0]?.name}" is ready. Convert it into editable whiteboard elements, open it immediately, or save it to your homepage.`
-                : `Choose "Convert all" to reconstruct each file into a separate editable whiteboard, "Open all in 1 whiteboard" to combine them, or "Back to homepage" to save image boards.`}
+                : `Choose "Convert all" to reconstruct each file into a separate editable whiteboard, "Open all in 1 board" to combine them, or "Back to homepage" to save image boards.`}
             </DialogDescription>
           </DialogHeader>
 
@@ -1718,7 +1781,7 @@ function HomePage() {
                 variant="secondary"
                 onClick={() => void handleOpenCombined()}
                 className="w-full rounded-xl text-xs font-medium h-9 px-2.5 truncate"
-                title={uploadPrompt?.fileCount === 1 ? "Open now" : "Open all in 1 whiteboard"}
+                title={uploadPrompt?.fileCount === 1 ? "Open now" : "Open all in 1 board"}
               >
                 {uploadPrompt?.fileCount === 1 ? "Open now" : "Open all in 1 board"}
               </Button>
@@ -1726,13 +1789,23 @@ function HomePage() {
                 type="button"
                 onClick={handleConvertAll}
                 className="w-full rounded-xl text-xs font-semibold gap-1.5 h-9 px-2.5 truncate shadow-sm bg-primary text-primary-foreground hover:bg-primary/90"
-                title={uploadPrompt?.fileCount === 1 ? "Convert to Whiteboard" : `Convert all (${uploadPrompt?.fileCount || 0})`}
+                title={
+                  uploadPrompt?.normalCount && uploadPrompt.normalCount > 0 && uploadPrompt?.smartCount && uploadPrompt.smartCount > 0
+                    ? `Convert ${uploadPrompt.normalCount} files to Whiteboard`
+                    : uploadPrompt?.normalCount && uploadPrompt.normalCount > 0
+                    ? uploadPrompt?.fileCount === 1 ? "Convert to Whiteboard" : `Convert all (${uploadPrompt?.fileCount || 0})`
+                    : `Import to dashboard (${uploadPrompt?.smartCount || 0})`
+                }
               >
                 <Sparkles className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">
-                  {uploadPrompt?.fileCount === 1
-                    ? "Convert to Whiteboard"
-                    : `Convert all (${uploadPrompt?.fileCount || 0})`}
+                  {uploadPrompt?.normalCount && uploadPrompt.normalCount > 0 && uploadPrompt?.smartCount && uploadPrompt.smartCount > 0
+                    ? `Convert remaining (${uploadPrompt.normalCount})`
+                    : uploadPrompt?.normalCount && uploadPrompt.normalCount > 0
+                    ? uploadPrompt?.fileCount === 1
+                      ? "Convert to Whiteboard"
+                      : `Convert all (${uploadPrompt?.fileCount || 0})`
+                    : `Import to dashboard (${uploadPrompt?.smartCount || 0})`}
                 </span>
               </Button>
             </div>
@@ -1775,7 +1848,7 @@ function HomePage() {
                   <p className="text-[11px] text-muted-foreground truncate">
                     {batchProgress.isFinished
                       ? batchProgress.failed > 0
-                        ? `${batchProgress.completed} converted, ${batchProgress.failed} failed. Click retry to re-attempt.`
+                        ? `${batchProgress.completed} converted, ${batchProgress.failed} failed. Save as image or retry.`
                         : "All whiteboards ready and editable"
                       : `${batchProgress.processing} in progress, ${batchProgress.pending} queued`}
                   </p>
@@ -1784,16 +1857,27 @@ function HomePage() {
 
               <div className="flex items-center gap-1">
                 {batchProgress.failed > 0 && !batchProgress.processing && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRetryAllFailed}
-                    className="h-7 px-2 rounded-lg text-[10px] font-semibold gap-1"
-                    title="Retry all failed conversions"
-                  >
-                    <RotateCcw className="h-3 w-3" />
-                    <span>Retry All</span>
-                  </Button>
+                  <>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => void handleSaveAllAsImage()}
+                      className="h-7 px-2 rounded-lg text-[10px] font-semibold"
+                      title="Save all failed as image whiteboards without AI"
+                    >
+                      <span>Save all as image</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRetryAllFailed}
+                      className="h-7 px-2 rounded-lg text-[10px] font-semibold gap-1"
+                      title="Retry all failed conversions"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      <span>Retry All</span>
+                    </Button>
+                  </>
                 )}
                 <Button
                   variant="ghost"

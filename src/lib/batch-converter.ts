@@ -215,6 +215,16 @@ export class BatchConversionQueue {
     }
   }
 
+  public async fallbackAllFailedToImage(): Promise<BoardRecord[]> {
+    const failedItems = this.items.filter((i) => i.status === "failed");
+    const results: BoardRecord[] = [];
+    for (const item of failedItems) {
+      const board = await this.fallbackToImage(item.id);
+      if (board) results.push(board);
+    }
+    return results;
+  }
+
   private async createImageBoard(item: BatchItem): Promise<BoardRecord> {
     const file = item.file;
     const baseTime = Date.now();
