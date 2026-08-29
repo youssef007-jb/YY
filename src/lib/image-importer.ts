@@ -203,7 +203,7 @@ export function reconstructWhiteboardElements(
   options: ReconstructOptions = {}
 ): {
   elements: PreparedWhiteboardObject[];
-  originalImageElement?: PreparedWhiteboardObject;
+  originalImageElement?: PreparedWhiteboardObject | undefined;
   bounds: { x: number; y: number; width: number; height: number };
   title: string;
 } {
