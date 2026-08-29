@@ -1733,7 +1733,7 @@ function drawSelection(el){
     {x:b.x+b.w+pad,y:b.y+b.h+pad},
     {x:b.x-pad,y:b.y+b.h+pad}
   ];
-  const sides=isText ? [] : [
+  const sides=[
     {x:b.x-pad,y:b.y+b.h/2},
     {x:b.x+b.w+pad,y:b.y+b.h/2}
   ];
