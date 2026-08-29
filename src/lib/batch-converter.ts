@@ -69,10 +69,10 @@ export class BatchConversionQueue {
   private queueIndex = 0;
   private isCancelled = false;
   private completedBoards: BoardRecord[] = [];
-  private onProgress?: (state: BatchProgressState) => void;
-  private onItemCompleted?: (board: BoardRecord, item: BatchItem) => void;
-  private onItemFailed?: (error: string, item: BatchItem) => void;
-  private onAllFinished?: (boards: BoardRecord[], state: BatchProgressState) => void;
+  private onProgress?: ((state: BatchProgressState) => void) | undefined;
+  private onItemCompleted?: ((board: BoardRecord, item: BatchItem) => void) | undefined;
+  private onItemFailed?: ((error: string, item: BatchItem) => void) | undefined;
+  private onAllFinished?: ((boards: BoardRecord[], state: BatchProgressState) => void) | undefined;
 
   constructor(files: File[], options: BatchConverterOptions = {}) {
     this.concurrency = Math.max(1, Math.min(6, options.concurrency || 3));
@@ -121,7 +121,7 @@ export class BatchConversionQueue {
     if (!item || item.status === "processing") return;
     item.status = "pending";
     item.statusText = "Queued for retry";
-    item.error = undefined;
+    delete item.error;
     this.isCancelled = false;
     this.emitProgress();
     void this.processSingleItem(item);
@@ -134,7 +134,7 @@ export class BatchConversionQueue {
     for (const item of failedItems) {
       item.status = "pending";
       item.statusText = "Queued for retry";
-      item.error = undefined;
+      delete item.error;
     }
     this.emitProgress();
     const workersToLaunch = Math.min(this.concurrency - this.activeCount, failedItems.length);
@@ -188,7 +188,7 @@ export class BatchConversionQueue {
     if (!item) return null;
     item.status = "processing";
     item.statusText = "Saving as image whiteboard...";
-    item.error = undefined;
+    delete item.error;
     this.emitProgress();
 
     try {
