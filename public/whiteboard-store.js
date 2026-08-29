@@ -46,7 +46,7 @@
           t.oncomplete = () => resolve(result && result.__req ? result.__req.result : result);
           t.onerror = () => reject(t.error || new Error("IndexedDB transaction failed"));
           t.onabort = () => reject(t.error || new Error("IndexedDB transaction aborted"));
-        })
+        }),
     );
   }
 
@@ -93,7 +93,8 @@
 
   function normalizeBoard(b) {
     if (!b) return b;
-    const title = (b.name && typeof b.name === "string" && b.name.trim()) ? b.name.trim() : "Untitled";
+    const title =
+      b.name && typeof b.name === "string" && b.name.trim() ? b.name.trim() : "Untitled";
     b.name = title;
     let rawElements = Array.isArray(b.elements) ? b.elements : [];
     if (rawElements.length === 0 && Array.isArray(b.layers) && b.layers.length > 0) {
@@ -119,18 +120,29 @@
       if (raw) {
         const p = JSON.parse(raw);
         let grid = "none";
-        if (p.gridStyle === "dots" || p.gridStyle === "dot-grid" || p.gridStyle === "grid-dots") grid = "dot-grid";
-        else if (p.gridStyle === "lines" || p.gridStyle === "line-grid" || p.gridStyle === "grid-lines") grid = "line-grid";
-        
+        if (p.gridStyle === "dots" || p.gridStyle === "dot-grid" || p.gridStyle === "grid-dots")
+          grid = "dot-grid";
+        else if (
+          p.gridStyle === "lines" ||
+          p.gridStyle === "line-grid" ||
+          p.gridStyle === "grid-lines"
+        )
+          grid = "line-grid";
+
         let pos = "bottom";
-        if (p.toolbarPos === "top" || p.toolbarPos === "left" || p.toolbarPos === "right" || p.toolbarPos === "bottom") {
+        if (
+          p.toolbarPos === "top" ||
+          p.toolbarPos === "left" ||
+          p.toolbarPos === "right" ||
+          p.toolbarPos === "bottom"
+        ) {
           pos = p.toolbarPos;
         }
-        
+
         return {
           gridStyle: grid,
           bgColor: typeof p.bgColor === "string" && p.bgColor.trim() ? p.bgColor.trim() : "#ffffff",
-          toolbarPos: pos
+          toolbarPos: pos,
         };
       }
     } catch (e) {}
@@ -184,7 +196,11 @@
     async putBoard(board) {
       if (board) {
         normalizeBoard(board);
-        if (board.phase_category === undefined || board.week_category === undefined || (!board.phase && !board.week)) {
+        if (
+          board.phase_category === undefined ||
+          board.week_category === undefined ||
+          (!board.phase && !board.week)
+        ) {
           const cats = extractPhaseAndWeekCategories(board.name || "");
           if (cats.phase && !board.phase) board.phase = cats.phase;
           if (cats.week && !board.week) board.week = cats.week;
@@ -214,7 +230,9 @@
       const copyName = (src.name || "Untitled") + " Copy";
       const cats = extractPhaseAndWeekCategories(copyName);
       const newBoardId = genId();
-      const rawElements = Array.isArray(src.elements) ? JSON.parse(JSON.stringify(src.elements)) : [];
+      const rawElements = Array.isArray(src.elements)
+        ? JSON.parse(JSON.stringify(src.elements))
+        : [];
 
       const copy = {
         ...JSON.parse(JSON.stringify(src)),
@@ -236,7 +254,7 @@
     async renameBoard(id, name) {
       const b = await Store.getBoard(id);
       if (!b) return null;
-      const newName = (name && typeof name === "string" && name.trim()) ? name.trim() : "Untitled";
+      const newName = name && typeof name === "string" && name.trim() ? name.trim() : "Untitled";
       b.name = newName;
       b.updatedAt = Date.now();
       const cats = extractPhaseAndWeekCategories(newName);

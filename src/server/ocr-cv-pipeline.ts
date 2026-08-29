@@ -1,6 +1,6 @@
 /**
  * Deterministic OCR + Computer Vision Geometric Reconstruction Engine
- * 
+ *
  * Architecture Pipeline:
  * 1. Google Cloud Vision OCR & Object Localization:
  *    - DOCUMENT_TEXT_DETECTION: High precision text content, bounding boxes, paragraphs, lines, words
@@ -56,7 +56,16 @@ export interface RawOcrBlock {
 }
 
 export interface RawDetectedShape {
-  type: "rect" | "roundRect" | "circle" | "ellipse" | "triangle" | "diamond" | "star" | "hexagon" | "heart";
+  type:
+    | "rect"
+    | "roundRect"
+    | "circle"
+    | "ellipse"
+    | "triangle"
+    | "diamond"
+    | "star"
+    | "hexagon"
+    | "heart";
   x: number;
   y: number;
   width: number;
@@ -142,7 +151,7 @@ function getCloudVisionApiKey(): string | null {
 async function callGoogleCloudVision(
   cleanBase64: string,
   width: number,
-  height: number
+  height: number,
 ): Promise<{
   ocrBlocks: RawOcrBlock[];
   localizedShapes: RawDetectedShape[];
@@ -266,7 +275,10 @@ async function callGoogleCloudVision(
     for (const obj of localized) {
       const name = (obj.name || "").toLowerCase();
       const normVerts = obj.boundingPoly?.normalizedVertices || [];
-      let minX = 0, minY = 0, boxW = 0, boxH = 0;
+      let minX = 0,
+        minY = 0,
+        boxW = 0,
+        boxH = 0;
 
       if (normVerts.length >= 2) {
         const xs = normVerts.map((v) => (v.x || 0) * width);
@@ -331,7 +343,7 @@ function analyzeGeometricPrimitives(
   imageBuffer: Buffer,
   width: number,
   height: number,
-  ocrBlocks: RawOcrBlock[]
+  ocrBlocks: RawOcrBlock[],
 ): {
   shapes: RawDetectedShape[];
   connectors: RawDetectedConnector[];
@@ -339,7 +351,8 @@ function analyzeGeometricPrimitives(
 } {
   const shapes: RawDetectedShape[] = [];
   const connectors: RawDetectedConnector[] = [];
-  const stickyRegions: Array<{ x: number; y: number; width: number; height: number; bg: string }> = [];
+  const stickyRegions: Array<{ x: number; y: number; width: number; height: number; bg: string }> =
+    [];
 
   if (width <= 0 || height <= 0) {
     return { shapes, connectors, stickyRegions };
@@ -361,7 +374,7 @@ function assembleNativeWhiteboardObjects(
   ocrBlocks: RawOcrBlock[],
   shapes: RawDetectedShape[],
   stickyRegions: Array<{ x: number; y: number; width: number; height: number; bg: string }>,
-  connectors: RawDetectedConnector[]
+  connectors: RawDetectedConnector[],
 ): {
   nativeObjects: DetectedObject[];
   textCount: number;
@@ -503,13 +516,8 @@ export async function runOcrAndComputerVision(req: {
   const allConnectors = [...localGeo.connectors];
 
   // 3. Assemble into Native Whiteboard Objects
-  const {
-    nativeObjects,
-    textCount,
-    shapeCount,
-    connectorCount,
-    stickyCount,
-  } = assembleNativeWhiteboardObjects(ocrBlocks, allShapes, allStickies, allConnectors);
+  const { nativeObjects, textCount, shapeCount, connectorCount, stickyCount } =
+    assembleNativeWhiteboardObjects(ocrBlocks, allShapes, allStickies, allConnectors);
 
   // 4. Calculate Confidence Score
   let confidence = 0.0;

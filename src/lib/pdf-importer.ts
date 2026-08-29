@@ -35,7 +35,8 @@ export async function renderPdfToImages(file: File | Blob): Promise<RenderedPage
     const numPages = pdf.numPages;
     const results: RenderedPage[] = [];
 
-    const fileName = file instanceof File ? (stripFileExtension(file.name) || file.name) : "PDF Document";
+    const fileName =
+      file instanceof File ? stripFileExtension(file.name) || file.name : "PDF Document";
 
     for (let pageNum = 1; pageNum <= numPages; pageNum++) {
       const page = await pdf.getPage(pageNum);
@@ -45,9 +46,11 @@ export async function renderPdfToImages(file: File | Blob): Promise<RenderedPage
       const maxRenderDim = 1400;
       let scale = 1.6;
       if (originalViewport.width > originalViewport.height) {
-        if (originalViewport.width * scale > maxRenderDim) scale = maxRenderDim / originalViewport.width;
+        if (originalViewport.width * scale > maxRenderDim)
+          scale = maxRenderDim / originalViewport.width;
       } else {
-        if (originalViewport.height * scale > maxRenderDim) scale = maxRenderDim / originalViewport.height;
+        if (originalViewport.height * scale > maxRenderDim)
+          scale = maxRenderDim / originalViewport.height;
       }
 
       const viewport = page.getViewport({ scale });

@@ -1,12 +1,12 @@
 /**
  * Whiteboard Creation Defaults Manager
- * 
+ *
  * IMPORTANT ARCHITECTURAL PRINCIPLE:
  * Homepage Dashboard Settings for Grid, Background Color, and Toolbar Placement
  * define the creation defaults for NEW whiteboards.
- * 
+ *
  * They MUST NOT retroactively mutate or rewrite existing whiteboards.
- * 
+ *
  * Flow:
  * 1. User changes Dashboard Settings -> stored in localStorage (`hbibo_whiteboard_creation_defaults`).
  * 2. User creates a new whiteboard or imports an asset -> copies current creation defaults into the new BoardRecord.
@@ -60,7 +60,10 @@ export function getWhiteboardCreationDefaults(): WhiteboardCreationDefaults {
       const parsed = JSON.parse(raw);
       return {
         gridStyle: normalizeGridStyle(parsed.gridStyle),
-        bgColor: typeof parsed.bgColor === "string" && parsed.bgColor.trim() ? parsed.bgColor.trim() : DEFAULT_CREATION_SETTINGS.bgColor,
+        bgColor:
+          typeof parsed.bgColor === "string" && parsed.bgColor.trim()
+            ? parsed.bgColor.trim()
+            : DEFAULT_CREATION_SETTINGS.bgColor,
         toolbarPos: normalizeToolbarPos(parsed.toolbarPos),
       };
     }
@@ -71,13 +74,20 @@ export function getWhiteboardCreationDefaults(): WhiteboardCreationDefaults {
 }
 
 export function setWhiteboardCreationDefaults(
-  defaults: Partial<WhiteboardCreationDefaults>
+  defaults: Partial<WhiteboardCreationDefaults>,
 ): WhiteboardCreationDefaults {
   const current = getWhiteboardCreationDefaults();
   const next: WhiteboardCreationDefaults = {
-    gridStyle: defaults.gridStyle !== undefined ? normalizeGridStyle(defaults.gridStyle) : current.gridStyle,
-    bgColor: typeof defaults.bgColor === "string" && defaults.bgColor.trim() ? defaults.bgColor.trim() : current.bgColor,
-    toolbarPos: defaults.toolbarPos !== undefined ? normalizeToolbarPos(defaults.toolbarPos) : current.toolbarPos,
+    gridStyle:
+      defaults.gridStyle !== undefined ? normalizeGridStyle(defaults.gridStyle) : current.gridStyle,
+    bgColor:
+      typeof defaults.bgColor === "string" && defaults.bgColor.trim()
+        ? defaults.bgColor.trim()
+        : current.bgColor,
+    toolbarPos:
+      defaults.toolbarPos !== undefined
+        ? normalizeToolbarPos(defaults.toolbarPos)
+        : current.toolbarPos,
   };
   if (typeof window !== "undefined") {
     try {

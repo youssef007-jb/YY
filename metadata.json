@@ -2,7 +2,5 @@
   "name": "Smart Canvas Enhancements",
   "description": "Interactive whiteboard and smart canvas with drawing tools, smart image/whiteboard conversion, and board management.",
   "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

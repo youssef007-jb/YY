@@ -65,7 +65,9 @@ export function HomeSettings({ className }: { className?: string }) {
   const { lang, setLang, t } = useI18n();
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>("light");
-  const [defaults, setDefaults] = useState<WhiteboardCreationDefaults>(getWhiteboardCreationDefaults());
+  const [defaults, setDefaults] = useState<WhiteboardCreationDefaults>(
+    getWhiteboardCreationDefaults(),
+  );
 
   useEffect(() => {
     setTheme(getStoredTheme());
@@ -106,9 +108,14 @@ export function HomeSettings({ className }: { className?: string }) {
         <Settings className="h-4 w-4" />
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent id="homepage-settings-modal" className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent
+          id="homepage-settings-modal"
+          className="sm:max-w-md max-h-[90vh] overflow-y-auto"
+        >
           <DialogHeader>
-            <DialogTitle className="text-lg font-semibold tracking-tight">{t("settings")}</DialogTitle>
+            <DialogTitle className="text-lg font-semibold tracking-tight">
+              {t("settings")}
+            </DialogTitle>
             <DialogDescription className="sr-only">{t("settings")}</DialogDescription>
           </DialogHeader>
 
@@ -174,12 +181,17 @@ export function HomeSettings({ className }: { className?: string }) {
               {/* Background Color */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-xs font-medium text-foreground">{t("defaultBgColor")}</Label>
-                  <span className="text-[11px] font-mono text-muted-foreground uppercase">{defaults.bgColor}</span>
+                  <Label className="text-xs font-medium text-foreground">
+                    {t("defaultBgColor")}
+                  </Label>
+                  <span className="text-[11px] font-mono text-muted-foreground uppercase">
+                    {defaults.bgColor}
+                  </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {PRESET_BG_COLORS.map((preset) => {
-                    const isSelected = defaults.bgColor.toLowerCase() === preset.value.toLowerCase();
+                    const isSelected =
+                      defaults.bgColor.toLowerCase() === preset.value.toLowerCase();
                     return (
                       <button
                         key={preset.value}
@@ -283,16 +295,24 @@ export function HomeSettings({ className }: { className?: string }) {
             <div className="space-y-4 pt-1">
               <div className="flex items-center justify-between">
                 <div>
-                  <Label htmlFor="theme-toggle" className="text-sm font-medium">{t("appearance")}</Label>
+                  <Label htmlFor="theme-toggle" className="text-sm font-medium">
+                    {t("appearance")}
+                  </Label>
                   <p className="text-xs text-muted-foreground">
                     {theme === "dark" ? t("darkMode") : t("lightMode")}
                   </p>
                 </div>
-                <Switch id="theme-toggle" checked={theme === "dark"} onCheckedChange={toggleTheme} />
+                <Switch
+                  id="theme-toggle"
+                  checked={theme === "dark"}
+                  onCheckedChange={toggleTheme}
+                />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="lang-select" className="text-sm font-medium">{t("language")}</Label>
+                <Label htmlFor="lang-select" className="text-sm font-medium">
+                  {t("language")}
+                </Label>
                 <Select value={lang} onValueChange={(v) => setLang(v as LangCode)}>
                   <SelectTrigger id="lang-select">
                     <SelectValue />

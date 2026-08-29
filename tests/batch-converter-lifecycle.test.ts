@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { BatchConversionQueue, type BatchItem, type BatchProgressState } from "../src/lib/batch-converter";
+import {
+  BatchConversionQueue,
+  type BatchItem,
+  type BatchProgressState,
+} from "../src/lib/batch-converter";
 import * as boardsDb from "../src/lib/boards-db";
 import * as smartPng from "../src/lib/smart-png";
 import * as thumbGen from "../src/lib/thumbnail-generator";
@@ -8,13 +12,11 @@ import { embedSmartPngMetadata } from "../src/lib/smart-png";
 // Helper to create a dummy PNG buffer
 function createDummyPngBytes(): Uint8Array {
   return new Uint8Array([
-    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-    0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-    0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89,
-    0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54,
-    0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4,
-    0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+    0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+    0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
+    0x42, 0x60, 0x82,
   ]);
 }
 
@@ -25,7 +27,9 @@ describe("Batch Conversion Pipeline Lifecycle & Name Preservation", () => {
 
   describe("Queue Initialization & Name Derivation", () => {
     it("should initialize batch items strictly preserving filenames as board titles", () => {
-      const file1 = new File(["dummy1"], "Sprint Planning (Phase 2 Week 3).png", { type: "image/png" });
+      const file1 = new File(["dummy1"], "Sprint Planning (Phase 2 Week 3).png", {
+        type: "image/png",
+      });
       const file2 = new File(["dummy2"], "Architecture.v2.Draft.jpg", { type: "image/jpeg" });
       const file3 = new File(["dummy3"], "Réunion d'équipe 2026.pdf", { type: "application/pdf" });
       const file4 = new File(["dummy4"], "数学ノート.json", { type: "application/json" });
@@ -54,7 +58,7 @@ describe("Batch Conversion Pipeline Lifecycle & Name Preservation", () => {
       ];
 
       const queue = new BatchConversionQueue(files);
-      let p = queue.getProgress();
+      const p = queue.getProgress();
       expect(p.total).toBe(4);
       expect(p.pending).toBe(4);
       expect(p.completed).toBe(0);
@@ -71,7 +75,9 @@ describe("Batch Conversion Pipeline Lifecycle & Name Preservation", () => {
         savedBoards.push(b);
         return b;
       });
-      vi.spyOn(thumbGen, "generateBoardThumbnail").mockResolvedValue("data:image/webp;base64,mockThumb");
+      vi.spyOn(thumbGen, "generateBoardThumbnail").mockResolvedValue(
+        "data:image/webp;base64,mockThumb",
+      );
 
       const originalName = "High Level Architecture (Phase 1 Week 2)";
       const rawPng = createDummyPngBytes();
@@ -124,18 +130,20 @@ describe("Batch Conversion Pipeline Lifecycle & Name Preservation", () => {
         savedBoards.push(b);
         return b;
       });
-      vi.spyOn(thumbGen, "generateBoardThumbnail").mockResolvedValue("data:image/webp;base64,mockThumb");
+      vi.spyOn(thumbGen, "generateBoardThumbnail").mockResolvedValue(
+        "data:image/webp;base64,mockThumb",
+      );
 
       const jsonPayload = JSON.stringify({
         name: "Cloud Migration Plan (Phase 3 Week 5)",
-        elements: [
-          { id: "e10", type: "text", text: "Phase 3 Steps", x: 50, y: 50, w: 200, h: 40 },
-        ],
+        elements: [{ id: "e10", type: "text", text: "Phase 3 Steps", x: 50, y: 50, w: 200, h: 40 }],
         theme: "classlight",
         bgColor: "#ffffff",
       });
 
-      const jsonFile = new File([jsonPayload], "Cloud Migration Plan.json", { type: "application/json" });
+      const jsonFile = new File([jsonPayload], "Cloud Migration Plan.json", {
+        type: "application/json",
+      });
 
       let completedBoard: boardsDb.BoardRecord | undefined;
       const queue = new BatchConversionQueue([jsonFile], {

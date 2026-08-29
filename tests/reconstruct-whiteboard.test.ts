@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  reconstructWhiteboardElements,
-  type AiConversionResult,
-} from "../src/lib/image-importer";
+import { reconstructWhiteboardElements, type AiConversionResult } from "../src/lib/image-importer";
 
 describe("Whiteboard Reconstruction - Element Generation & Layer Hierarchy", () => {
   // Create mock Image element with defined dimensions
@@ -18,13 +15,34 @@ describe("Whiteboard Reconstruction - Element Generation & Layer Hierarchy", () 
     const aiResult: AiConversionResult = {
       imageWidth: 1200,
       imageHeight: 800,
-      counts: { text: 1, sticky: 1, shapes: 1, connectors: 1, drawings: 1, embeddedImages: 0, total: 5 },
+      counts: {
+        text: 1,
+        sticky: 1,
+        shapes: 1,
+        connectors: 1,
+        drawings: 1,
+        embeddedImages: 0,
+        total: 5,
+      },
       objects: [
         { type: "text", text: "Title", x: 100, y: 50, width: 200, height: 40 },
         { type: "sticky", text: "Note", x: 100, y: 120, width: 180, height: 140 },
         { type: "shape", shapeType: "circle", x: 400, y: 200, width: 100, height: 100 },
-        { type: "connector", connectorType: "arrow", startX: 200, startY: 100, endX: 400, endY: 200 },
-        { type: "drawing", points: [{ x: 10, y: 10 }, { x: 50, y: 50 }] },
+        {
+          type: "connector",
+          connectorType: "arrow",
+          startX: 200,
+          startY: 100,
+          endX: 400,
+          endY: 200,
+        },
+        {
+          type: "drawing",
+          points: [
+            { x: 10, y: 10 },
+            { x: 50, y: 50 },
+          ],
+        },
       ],
     };
 
@@ -44,13 +62,27 @@ describe("Whiteboard Reconstruction - Element Generation & Layer Hierarchy", () 
     const aiResult: AiConversionResult = {
       imageWidth: 1200,
       imageHeight: 800,
-      counts: { text: 1, sticky: 1, shapes: 2, connectors: 1, drawings: 1, embeddedImages: 0, total: 6 },
+      counts: {
+        text: 1,
+        sticky: 1,
+        shapes: 2,
+        connectors: 1,
+        drawings: 1,
+        embeddedImages: 0,
+        total: 6,
+      },
       // Mix them up randomly in the AI input
       objects: [
         { type: "connector", connectorType: "arrow", startX: 10, startY: 10, endX: 100, endY: 100 },
         { type: "text", text: "Text On Top", x: 50, y: 50, width: 100, height: 30 },
         { type: "shape", shapeType: "rect", x: 0, y: 0, width: 800, height: 600, fill: true }, // Large filled rect -> background container
-        { type: "drawing", points: [{ x: 5, y: 5 }, { x: 15, y: 15 }] },
+        {
+          type: "drawing",
+          points: [
+            { x: 5, y: 5 },
+            { x: 15, y: 15 },
+          ],
+        },
         { type: "sticky", text: "Sticky", x: 60, y: 60, width: 180, height: 140 },
         { type: "shape", shapeType: "circle", x: 200, y: 200, width: 50, height: 50 }, // standard shape
       ],
@@ -77,7 +109,15 @@ describe("Whiteboard Reconstruction - Element Generation & Layer Hierarchy", () 
     const aiResult: AiConversionResult = {
       imageWidth: 1200,
       imageHeight: 800,
-      counts: { text: 1, sticky: 0, shapes: 0, connectors: 0, drawings: 0, embeddedImages: 0, total: 1 },
+      counts: {
+        text: 1,
+        sticky: 0,
+        shapes: 0,
+        connectors: 0,
+        drawings: 0,
+        embeddedImages: 0,
+        total: 1,
+      },
       objects: [{ type: "text", text: "Centered", x: 100, y: 100, width: 200, height: 40 }],
     };
 
@@ -96,7 +136,15 @@ describe("Whiteboard Reconstruction - Element Generation & Layer Hierarchy", () 
     const aiResult: AiConversionResult = {
       imageWidth: 1200,
       imageHeight: 800,
-      counts: { text: 1, sticky: 0, shapes: 0, connectors: 0, drawings: 0, embeddedImages: 0, total: 1 },
+      counts: {
+        text: 1,
+        sticky: 0,
+        shapes: 0,
+        connectors: 0,
+        drawings: 0,
+        embeddedImages: 0,
+        total: 1,
+      },
       objects: [{ type: "text", text: "Test", x: 10, y: 10, width: 50, height: 20 }],
     };
 

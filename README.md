@@ -228,11 +228,11 @@ If practical, use a simple application state such as:
 
 Home:
 
-  #home
+#home
 
 Whiteboard:
 
-  #board/<board-id>
+#board/<board-id>
 
 This allows the application to know which whiteboard is currently open.
 
@@ -370,19 +370,19 @@ The final result should behave like:
 
 HOME
 
-  ↓
+↓
 
 New Whiteboard
 
-  ↓
+↓
 
 WHITEBOARD EDITOR
 
-  ↓
+↓
 
 Home
 
-  ↓
+↓
 
 HOME
 
@@ -390,11 +390,11 @@ or:
 
 HOME
 
-  ↓
+↓
 
 Existing Whiteboard
 
-  ↓
+↓
 
 WHITEBOARD EDITOR
 

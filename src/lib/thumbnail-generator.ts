@@ -20,7 +20,10 @@ export async function generateBoardThumbnail(board: BoardRecord): Promise<string
     return canvas.toDataURL("image/jpeg", 0.85);
   }
 
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
 
   elements.forEach((el) => {
     if (el.points && Array.isArray(el.points) && el.points.length > 0) {
@@ -43,11 +46,17 @@ export async function generateBoardThumbnail(board: BoardRecord): Promise<string
   });
 
   if (!isFinite(minX) || !isFinite(minY)) {
-    minX = 0; minY = 0; maxX = 800; maxY = 500;
+    minX = 0;
+    minY = 0;
+    maxX = 800;
+    maxY = 500;
   }
 
   const pad = 36;
-  minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+  minX -= pad;
+  minY -= pad;
+  maxX += pad;
+  maxY += pad;
   const ww = Math.max(1, maxX - minX);
   const hh = Math.max(1, maxY - minY);
   const scale = Math.min(W / ww, H / hh);
@@ -196,7 +205,8 @@ export async function generateBoardThumbnail(board: BoardRecord): Promise<string
       ctx.lineWidth = Math.max(1, el.width || 2);
       ctx.stroke();
     } else if (el.type === "star") {
-      const scx = bx + bw / 2, scy = by + bh / 2;
+      const scx = bx + bw / 2,
+        scy = by + bh / 2;
       const outerR = Math.min(Math.abs(bw), Math.abs(bh)) / 2;
       const innerR = outerR * 0.45;
       ctx.beginPath();
@@ -209,7 +219,12 @@ export async function generateBoardThumbnail(board: BoardRecord): Promise<string
       ctx.strokeStyle = el.color || "#0055FF";
       ctx.lineWidth = Math.max(1, el.width || 2);
       ctx.stroke();
-    } else if (el.type === "line" || el.type === "arrow" || el.type === "doubleArrow" || el.type === "dashed") {
+    } else if (
+      el.type === "line" ||
+      el.type === "arrow" ||
+      el.type === "doubleArrow" ||
+      el.type === "dashed"
+    ) {
       ctx.beginPath();
       ctx.moveTo(bx, by);
       ctx.lineTo(bx + bw, by + bh);

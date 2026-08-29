@@ -52,7 +52,16 @@ export interface DetectedStickyObject {
 
 export interface DetectedShapeObject {
   type: "shape";
-  shapeType: "rect" | "roundRect" | "circle" | "ellipse" | "triangle" | "diamond" | "star" | "hexagon" | "heart";
+  shapeType:
+    | "rect"
+    | "roundRect"
+    | "circle"
+    | "ellipse"
+    | "triangle"
+    | "diamond"
+    | "star"
+    | "hexagon"
+    | "heart";
   x: number;
   y: number;
   width: number;
@@ -117,15 +126,9 @@ export interface ConversionResponse {
 }
 
 // Candidate Gemini models in order of capability, quality, and availability
-const GEMINI_MODELS = [
-  "gemini-3.7-flash",
-  "gemini-3.1-flash-lite",
-];
+const GEMINI_MODELS = ["gemini-3.7-flash", "gemini-3.1-flash-lite"];
 
-const CANDIDATE_MODELS = [
-  "google/gemini-3.7-flash",
-  "google/gemini-3.1-flash-lite",
-];
+const CANDIDATE_MODELS = ["google/gemini-3.7-flash", "google/gemini-3.1-flash-lite"];
 
 function cleanErrorMessage(rawError: unknown): string {
   if (!rawError) return "Unknown error occurred during conversion.";
@@ -170,7 +173,7 @@ function compileConversionResponse(
   width: number,
   height: number,
   validObjects: DetectedObject[],
-  source: "ocr-cv" | "gemini-fallback" = "ocr-cv"
+  source: "ocr-cv" | "gemini-fallback" = "ocr-cv",
 ): ConversionResponse {
   let textCount = 0;
   let stickyCount = 0;
@@ -206,7 +209,9 @@ function compileConversionResponse(
   };
 }
 
-export async function convertWhiteboardImage(req: ConvertImageRequest): Promise<ConversionResponse> {
+export async function convertWhiteboardImage(
+  req: ConvertImageRequest,
+): Promise<ConversionResponse> {
   const { imageBase64, mimeType, width, height } = req;
   const cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, "");
 
@@ -221,7 +226,7 @@ export async function convertWhiteboardImage(req: ConvertImageRequest): Promise<
         width,
         height,
         ocrCvResult.objects,
-        "ocr-cv"
+        "ocr-cv",
       );
     }
   } catch (ocrErr) {
@@ -238,15 +243,16 @@ export async function convertWhiteboardImage(req: ConvertImageRequest): Promise<
         width,
         height,
         ocrCvResult.objects,
-        "ocr-cv"
+        "ocr-cv",
       );
     }
     throw new Error("Gemini API key is not configured. Please set GEMINI_API_KEY.");
   }
 
-  const ocrContextPrompt = ocrCvResult && ocrCvResult.rawOcrText
-    ? `\n\nPreliminary OCR detected text tokens in the image:\n${ocrCvResult.rawOcrText}\nUse this OCR context to ensure exact spelling, wording, and positioning.`
-    : "";
+  const ocrContextPrompt =
+    ocrCvResult && ocrCvResult.rawOcrText
+      ? `\n\nPreliminary OCR detected text tokens in the image:\n${ocrCvResult.rawOcrText}\nUse this OCR context to ensure exact spelling, wording, and positioning.`
+      : "";
 
   const prompt = `You are a precision computer vision whiteboard and diagram reconstruction engine.
 Analyze this whiteboard image / diagram screenshot (dimensions: ${width}x${height} pixels) and break it down into native vector whiteboard objects.
@@ -335,7 +341,11 @@ Output STRICT JSON in this exact structure:
         lastError = err;
         const errStr = String(err?.message || err);
         console.warn(`Gemini model ${modelName} failed: ${errStr}`);
-        if (isQuotaOrRateLimitError(errStr) || errStr.includes("NOT_FOUND") || errStr.includes("404")) {
+        if (
+          isQuotaOrRateLimitError(errStr) ||
+          errStr.includes("NOT_FOUND") ||
+          errStr.includes("404")
+        ) {
           continue;
         }
       }
@@ -394,7 +404,11 @@ Output STRICT JSON in this exact structure:
           const errStr = String(err?.message || err);
           console.warn(`Model ${modelName} attempt ${attempt + 1} failed: ${errStr}`);
 
-          if (isQuotaOrRateLimitError(errStr) || errStr.includes("NOT_FOUND") || errStr.includes("404")) {
+          if (
+            isQuotaOrRateLimitError(errStr) ||
+            errStr.includes("NOT_FOUND") ||
+            errStr.includes("404")
+          ) {
             break;
           }
         }
@@ -409,21 +423,28 @@ Output STRICT JSON in this exact structure:
   // Graceful fallback: If Gemini failed but OCR/CV yielded usable results, use OCR/CV!
   if (!responseText) {
     if (ocrCvResult && ocrCvResult.objects.length > 0) {
-      console.info("Gemini AI was unavailable; gracefully falling back to deterministic OCR/CV results.");
+      console.info(
+        "Gemini AI was unavailable; gracefully falling back to deterministic OCR/CV results.",
+      );
       return compileConversionResponse(
         ocrCvResult.title || "Imported Whiteboard",
         width,
         height,
         ocrCvResult.objects,
-        "ocr-cv"
+        "ocr-cv",
       );
     }
 
     const cleanMsg = cleanErrorMessage(lastError);
     if (isQuotaOrRateLimitError(cleanMsg)) {
-      throw new Error("AI Vision rate limit reached. Please wait a few seconds and try again, or configure your GEMINI_API_KEY.");
+      throw new Error(
+        "AI Vision rate limit reached. Please wait a few seconds and try again, or configure your GEMINI_API_KEY.",
+      );
     }
-    throw new Error(cleanMsg || "The AI vision service is currently experiencing high demand. Please try again shortly.");
+    throw new Error(
+      cleanMsg ||
+        "The AI vision service is currently experiencing high demand. Please try again shortly.",
+    );
   }
 
   let parsed: { title?: string; objects?: DetectedObject[] };
@@ -442,7 +463,7 @@ Output STRICT JSON in this exact structure:
         width,
         height,
         ocrCvResult.objects,
-        "ocr-cv"
+        "ocr-cv",
       );
     }
     throw new Error("Could not parse image analysis response from AI vision service.");
@@ -490,7 +511,17 @@ Output STRICT JSON in this exact structure:
         break;
       }
       case "shape": {
-        const allowedShapes = ["rect", "roundRect", "circle", "ellipse", "triangle", "diamond", "star", "hexagon", "heart"];
+        const allowedShapes = [
+          "rect",
+          "roundRect",
+          "circle",
+          "ellipse",
+          "triangle",
+          "diamond",
+          "star",
+          "hexagon",
+          "heart",
+        ];
         const sType = allowedShapes.includes(obj.shapeType) ? obj.shapeType : "rect";
         validObjects.push({
           type: "shape",
@@ -563,7 +594,7 @@ Output STRICT JSON in this exact structure:
       width,
       height,
       ocrCvResult.objects,
-      "ocr-cv"
+      "ocr-cv",
     );
   }
 
@@ -572,6 +603,6 @@ Output STRICT JSON in this exact structure:
     width,
     height,
     validObjects,
-    "gemini-fallback"
+    "gemini-fallback",
   );
 }

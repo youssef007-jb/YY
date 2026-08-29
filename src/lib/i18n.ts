@@ -31,7 +31,8 @@ const en: Dict = {
   boardCountOne: "1 board",
   boardCountOther: "{n} boards",
   noBoardsTitle: "No whiteboards yet",
-  noBoardsDesc: "Create your first infinite canvas to start sketching, writing and organising ideas.",
+  noBoardsDesc:
+    "Create your first infinite canvas to start sketching, writing and organising ideas.",
   emptyBoard: "Empty board",
   editedAgo: "Edited {t}",
   justNow: "just now",
@@ -44,7 +45,8 @@ const en: Dict = {
   editDetails: "Edit details",
   delete: "Delete",
   deleteConfirmTitle: 'Delete "{name}"?',
-  deleteConfirmDesc: "This whiteboard and everything on it will be permanently removed from this device.",
+  deleteConfirmDesc:
+    "This whiteboard and everything on it will be permanently removed from this device.",
   cancel: "Cancel",
   searchPlaceholder: "Search boards, phase or week…",
   selectPhase: "Select Phase",
@@ -81,7 +83,8 @@ const en: Dict = {
   darkMode: "Dark",
   language: "Language",
   whiteboardDefaults: "New Whiteboard Defaults",
-  whiteboardDefaultsDesc: "Applies to newly created whiteboards only. Existing whiteboards remain unchanged.",
+  whiteboardDefaultsDesc:
+    "Applies to newly created whiteboards only. Existing whiteboards remain unchanged.",
   defaultGrid: "Grid Pattern",
   gridNone: "None",
   gridDots: "Dots",
@@ -120,7 +123,8 @@ const es: Dict = {
   boardCountOne: "1 pizarra",
   boardCountOther: "{n} pizarras",
   noBoardsTitle: "Aún no hay pizarras",
-  noBoardsDesc: "Crea tu primer lienzo infinito para empezar a dibujar, escribir y organizar ideas.",
+  noBoardsDesc:
+    "Crea tu primer lienzo infinito para empezar a dibujar, escribir y organizar ideas.",
   emptyBoard: "Pizarra vacía",
   editedAgo: "Editado {t}",
   justNow: "justo ahora",
@@ -133,7 +137,8 @@ const es: Dict = {
   editDetails: "Editar detalles",
   delete: "Eliminar",
   deleteConfirmTitle: '¿Eliminar "{name}"?',
-  deleteConfirmDesc: "Esta pizarra y todo su contenido se eliminarán permanentemente de este dispositivo.",
+  deleteConfirmDesc:
+    "Esta pizarra y todo su contenido se eliminarán permanentemente de este dispositivo.",
   cancel: "Cancelar",
   searchPlaceholder: "Buscar pizarras, fase o semana…",
   selectPhase: "Seleccionar Fase",
@@ -154,7 +159,8 @@ const es: Dict = {
   darkMode: "Oscuro",
   language: "Idioma",
   whiteboardDefaults: "Valores Predeterminados para Nuevas Pizarras",
-  whiteboardDefaultsDesc: "Se aplica únicamente a las nuevas pizarras creadas o importadas. Las existentes no se modifican.",
+  whiteboardDefaultsDesc:
+    "Se aplica únicamente a las nuevas pizarras creadas o importadas. Las existentes no se modifican.",
   defaultGrid: "Cuadrícula Predeterminada",
   gridNone: "Ninguna",
   gridDots: "Puntos",
@@ -205,7 +211,8 @@ const fr: Dict = {
   editDetails: "Modifier les détails",
   delete: "Supprimer",
   deleteConfirmTitle: 'Supprimer "{name}" ?',
-  deleteConfirmDesc: "Ce tableau et tout son contenu seront définitivement supprimés de cet appareil.",
+  deleteConfirmDesc:
+    "Ce tableau et tout son contenu seront définitivement supprimés de cet appareil.",
   cancel: "Annuler",
   searchPlaceholder: "Rechercher des tableaux, phase ou semaine…",
   selectPhase: "Sélectionner une Phase",
@@ -226,7 +233,8 @@ const fr: Dict = {
   darkMode: "Sombre",
   language: "Langue",
   whiteboardDefaults: "Paramètres par Défaut des Nouveaux Tableaux",
-  whiteboardDefaultsDesc: "S'applique uniquement aux nouveaux tableaux créés ou importés. Les tableaux existants restent inchangés.",
+  whiteboardDefaultsDesc:
+    "S'applique uniquement aux nouveaux tableaux créés ou importés. Les tableaux existants restent inchangés.",
   defaultGrid: "Grille par Défaut",
   gridNone: "Aucune",
   gridDots: "Points",
@@ -264,7 +272,8 @@ const de: Dict = {
   boardCountOne: "1 Board",
   boardCountOther: "{n} Boards",
   noBoardsTitle: "Noch keine Whiteboards",
-  noBoardsDesc: "Erstelle dein erstes unendliches Canvas, um Ideen zu skizzieren, zu schreiben und zu organisieren.",
+  noBoardsDesc:
+    "Erstelle dein erstes unendliches Canvas, um Ideen zu skizzieren, zu schreiben und zu organisieren.",
   emptyBoard: "Leeres Board",
   editedAgo: "Bearbeitet {t}",
   justNow: "gerade eben",
@@ -277,7 +286,8 @@ const de: Dict = {
   editDetails: "Details bearbeiten",
   delete: "Löschen",
   deleteConfirmTitle: '"{name}" löschen?',
-  deleteConfirmDesc: "Dieses Whiteboard und sein gesamter Inhalt werden dauerhaft von diesem Gerät entfernt.",
+  deleteConfirmDesc:
+    "Dieses Whiteboard und sein gesamter Inhalt werden dauerhaft von diesem Gerät entfernt.",
   cancel: "Abbrechen",
   searchPlaceholder: "Boards, Phase oder Woche suchen…",
   selectPhase: "Phase auswählen",
@@ -298,7 +308,8 @@ const de: Dict = {
   darkMode: "Dunkel",
   language: "Sprache",
   whiteboardDefaults: "Standardeinstellungen für Neue Whiteboards",
-  whiteboardDefaultsDesc: "Gilt nur für neu erstellte Whiteboards. Bestehende Whiteboards bleiben unverändert.",
+  whiteboardDefaultsDesc:
+    "Gilt nur für neu erstellte Whiteboards. Bestehende Whiteboards bleiben unverändert.",
   defaultGrid: "Standard-Raster",
   gridNone: "Keins",
   gridDots: "Punkte",
@@ -370,7 +381,8 @@ const pt: Dict = {
   darkMode: "Escuro",
   language: "Idioma",
   whiteboardDefaults: "Padrões para Novos Quadros",
-  whiteboardDefaultsDesc: "Aplica-se apenas a quadros recém-criados. Os quadros existentes permanecem inalterados.",
+  whiteboardDefaultsDesc:
+    "Aplica-se apenas a quadros recém-criados. Os quadros existentes permanecem inalterados.",
   defaultGrid: "Grade Padrão",
   gridNone: "Nenhuma",
   gridDots: "Pontos",
@@ -421,7 +433,8 @@ const it: Dict = {
   editDetails: "Modifica dettagli",
   delete: "Elimina",
   deleteConfirmTitle: 'Eliminare "{name}"?',
-  deleteConfirmDesc: "Questa lavagna e tutto il suo contenuto verranno rimossi permanentemente da questo dispositivo.",
+  deleteConfirmDesc:
+    "Questa lavagna e tutto il suo contenuto verranno rimossi permanentemente da questo dispositivo.",
   cancel: "Annulla",
   searchPlaceholder: "Cerca lavagne, fase o settimana…",
   selectPhase: "Seleziona Fase",
@@ -442,7 +455,8 @@ const it: Dict = {
   darkMode: "Scuro",
   language: "Lingua",
   whiteboardDefaults: "Impostazioni Predefinite per Nuove Lavagne",
-  whiteboardDefaultsDesc: "Si applica solo alle nuove lavagne create. Le lavagne esistenti rimangono invariate.",
+  whiteboardDefaultsDesc:
+    "Si applica solo alle nuove lavagne create. Le lavagne esistenti rimangono invariate.",
   defaultGrid: "Griglia Predefinita",
   gridNone: "Nessuna",
   gridDots: "Punti",
@@ -658,7 +672,8 @@ const ja: Dict = {
   darkMode: "ダーク",
   language: "言語",
   whiteboardDefaults: "新しいホワイトボードのデフォルト設定",
-  whiteboardDefaultsDesc: "新しく作成されたボードにのみ適用されます。既存のボードは変更されません。",
+  whiteboardDefaultsDesc:
+    "新しく作成されたボードにのみ適用されます。既存のボードは変更されません。",
   defaultGrid: "デフォルトグリッド",
   gridNone: "なし",
   gridDots: "ドット",
@@ -696,7 +711,8 @@ const ru: Dict = {
   boardCountOne: "1 доска",
   boardCountOther: "{n} досок",
   noBoardsTitle: "Пока нет досок",
-  noBoardsDesc: "Создайте свой первый бесконечный холст, чтобы начать рисовать, писать и организовывать идеи.",
+  noBoardsDesc:
+    "Создайте свой первый бесконечный холст, чтобы начать рисовать, писать и организовывать идеи.",
   emptyBoard: "Пустая доска",
   editedAgo: "Изменено {t}",
   justNow: "только что",
@@ -730,7 +746,8 @@ const ru: Dict = {
   darkMode: "Тёмная",
   language: "Язык",
   whiteboardDefaults: "Настройки по Умолчанию для Новых Досок",
-  whiteboardDefaultsDesc: "Применяются только к вновь созданным доскам. Существующие доски остаются без изменений.",
+  whiteboardDefaultsDesc:
+    "Применяются только к вновь созданным доскам. Существующие доски остаются без изменений.",
   defaultGrid: "Сетка по Умолчанию",
   gridNone: "Без сетки",
   gridDots: "Точки",

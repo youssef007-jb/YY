@@ -1,6 +1,6 @@
 /**
  * Utilities for strictly preserving whiteboard names and uploaded/downloaded filenames.
- * 
+ *
  * Rules:
  * 1. Only remove the trailing file extension (e.g. ".png", ".jpg", ".pdf", ".json") when deriving a whiteboard title from a file.
  * 2. Preserve ALL characters literally:
@@ -24,8 +24,11 @@ export function stripFileExtension(filename: string): string {
   return filename;
 }
 
-export function buildDownloadFilename(boardName: string | undefined | null, extension: string): string {
-  const baseName = (boardName && boardName.length > 0) ? boardName : "Whiteboard";
+export function buildDownloadFilename(
+  boardName: string | undefined | null,
+  extension: string,
+): string {
+  const baseName = boardName && boardName.length > 0 ? boardName : "Whiteboard";
   const ext = extension.startsWith(".") ? extension : `.${extension}`;
   return `${baseName}${ext}`;
 }

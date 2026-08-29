@@ -104,14 +104,20 @@ export async function prepareImageForAnalysis(file: File | Blob): Promise<{
  */
 export async function analyzeWhiteboardImage(
   imageInfo: { base64: string; mimeType: string; width: number; height: number },
-  onStatusUpdateOrOptions?: ((status: string) => void) | { onStatusUpdate?: (status: string) => void; signal?: AbortSignal },
-  signalOrLegacy?: AbortSignal
+  onStatusUpdateOrOptions?:
+    | ((status: string) => void)
+    | { onStatusUpdate?: (status: string) => void; signal?: AbortSignal },
+  signalOrLegacy?: AbortSignal,
 ): Promise<AiConversionResult> {
-  const onStatusUpdate = typeof onStatusUpdateOrOptions === "function"
-    ? onStatusUpdateOrOptions
-    : onStatusUpdateOrOptions?.onStatusUpdate;
-  const signal = (onStatusUpdateOrOptions && typeof onStatusUpdateOrOptions === "object" && onStatusUpdateOrOptions.signal)
-    || signalOrLegacy;
+  const onStatusUpdate =
+    typeof onStatusUpdateOrOptions === "function"
+      ? onStatusUpdateOrOptions
+      : onStatusUpdateOrOptions?.onStatusUpdate;
+  const signal =
+    (onStatusUpdateOrOptions &&
+      typeof onStatusUpdateOrOptions === "object" &&
+      onStatusUpdateOrOptions.signal) ||
+    signalOrLegacy;
 
   onStatusUpdate?.("Analyzing image with AI vision...");
 
@@ -168,7 +174,7 @@ export function cropImageRegion(
   sourceImg: HTMLImageElement,
   crop: { x: number; y: number; width: number; height: number },
   scaleX: number,
-  scaleY: number
+  scaleY: number,
 ): string {
   try {
     const srcX = Math.max(0, Math.round(crop.x * scaleX));
@@ -208,7 +214,7 @@ export interface ReconstructOptions {
 export function reconstructWhiteboardElements(
   result: AiConversionResult,
   sourceImg: HTMLImageElement,
-  options: ReconstructOptions = {}
+  options: ReconstructOptions = {},
 ): {
   elements: PreparedWhiteboardObject[];
   originalImageElement?: PreparedWhiteboardObject | undefined;
@@ -260,7 +266,10 @@ export function reconstructWhiteboardElements(
         const wx = mapX(obj.x);
         const wy = mapY(obj.y);
         const baseFontSize = Number(obj.fontSize) || 18;
-        const scaledSize = Math.max(12, Math.min(120, Math.round(baseFontSize * worldScale * scaleToNaturalX)));
+        const scaledSize = Math.max(
+          12,
+          Math.min(120, Math.round(baseFontSize * worldScale * scaleToNaturalX)),
+        );
 
         textElements.push({
           id: genId(),
@@ -289,7 +298,10 @@ export function reconstructWhiteboardElements(
         const w = mapDim(obj.width || 180);
         const h = mapDim(obj.height || 140, true);
         const baseFontSize = Number(obj.fontSize) || 16;
-        const scaledSize = Math.max(12, Math.min(48, Math.round(baseFontSize * worldScale * scaleToNaturalX)));
+        const scaledSize = Math.max(
+          12,
+          Math.min(48, Math.round(baseFontSize * worldScale * scaleToNaturalX)),
+        );
 
         stickyNotes.push({
           id: genId(),
@@ -315,7 +327,10 @@ export function reconstructWhiteboardElements(
         const wy = mapY(obj.y);
         const w = mapDim(obj.width || 120);
         const h = mapDim(obj.height || 100, true);
-        const strokeW = Math.max(1, Math.min(16, Math.round((Number(obj.strokeWidth) || 2) * worldScale * scaleToNaturalX)));
+        const strokeW = Math.max(
+          1,
+          Math.min(16, Math.round((Number(obj.strokeWidth) || 2) * worldScale * scaleToNaturalX)),
+        );
 
         const el: PreparedWhiteboardObject = {
           id: genId(),
@@ -345,7 +360,10 @@ export function reconstructWhiteboardElements(
         const sy = mapY(obj.startY);
         const ex = mapX(obj.endX);
         const ey = mapY(obj.endY);
-        const strokeW = Math.max(1, Math.min(14, Math.round((Number(obj.strokeWidth) || 2) * worldScale * scaleToNaturalX)));
+        const strokeW = Math.max(
+          1,
+          Math.min(14, Math.round((Number(obj.strokeWidth) || 2) * worldScale * scaleToNaturalX)),
+        );
 
         connectorElements.push({
           id: genId(),
@@ -369,7 +387,10 @@ export function reconstructWhiteboardElements(
           : [];
 
         if (pts.length > 0) {
-          const strokeW = Math.max(1, Math.min(24, Math.round((Number(obj.strokeWidth) || 3) * worldScale * scaleToNaturalX)));
+          const strokeW = Math.max(
+            1,
+            Math.min(24, Math.round((Number(obj.strokeWidth) || 3) * worldScale * scaleToNaturalX)),
+          );
           const isHighlighter = Boolean(obj.isHighlighter);
 
           if (isHighlighter) {
@@ -401,7 +422,7 @@ export function reconstructWhiteboardElements(
           sourceImg,
           { x: obj.x, y: obj.y, width: obj.width, height: obj.height },
           scaleToNaturalX,
-          scaleToNaturalY
+          scaleToNaturalY,
         );
 
         if (cropDataUrl) {

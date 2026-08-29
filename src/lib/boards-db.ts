@@ -77,7 +77,10 @@ function openDb(): Promise<IDBDatabase> {
   return dbPromise;
 }
 
-function run<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+function run<T>(
+  mode: IDBTransactionMode,
+  fn: (store: IDBObjectStore) => IDBRequest<T>,
+): Promise<T> {
   return openDb().then(
     (db) =>
       new Promise<T>((resolve, reject) => {
@@ -118,8 +121,8 @@ export function extractPhaseAndWeekCategories(filename: string): {
   if (!filename || typeof filename !== "string") {
     return { phase_category: null, week_category: null };
   }
-  const phaseMatch = filename.match(/phase[:\s_\-\/]*(\d+)/i);
-  const weekMatch = filename.match(/week[:\s_\-\/]*(\d+)/i);
+  const phaseMatch = filename.match(/phase[:\s_\-/]*(\d+)/i);
+  const weekMatch = filename.match(/week[:\s_\-/]*(\d+)/i);
 
   const phaseNum = phaseMatch ? parseInt(phaseMatch[1] ?? "", 10) : null;
   const weekNum = weekMatch ? parseInt(weekMatch[1] ?? "", 10) : null;
@@ -148,9 +151,10 @@ import { getWhiteboardCreationDefaults } from "./board-defaults";
 
 export function normalizeBoard(b: BoardRecord): BoardRecord {
   if (!b) return b;
-  const title = (b.name && typeof b.name === "string" && b.name.length > 0) ? b.name : (b.name || "Untitled");
+  const title =
+    b.name && typeof b.name === "string" && b.name.length > 0 ? b.name : b.name || "Untitled";
   b.name = title;
-  
+
   // Extract elements directly or from legacy layers if present
   let rawElements = Array.isArray(b.elements) ? b.elements : [];
   if (rawElements.length === 0 && Array.isArray(b.layers) && b.layers.length > 0) {
@@ -199,9 +203,7 @@ export function blankBoard(name?: string): BoardRecord {
 export async function listBoards(): Promise<BoardRecord[]> {
   await migrateLegacy();
   const all = await run<BoardRecord[]>("readonly", (s) => s.getAll() as IDBRequest<BoardRecord[]>);
-  const normalized = (all ?? [])
-    .filter((b) => !b.docId || b.docId === b.id)
-    .map(normalizeBoard);
+  const normalized = (all ?? []).filter((b) => !b.docId || b.docId === b.id).map(normalizeBoard);
   return normalized.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 }
 
@@ -215,7 +217,11 @@ export async function getBoard(id: string): Promise<BoardRecord | null> {
 
 export async function putBoard(board: BoardRecord): Promise<BoardRecord> {
   normalizeBoard(board);
-  if (board.phase_category === undefined || board.week_category === undefined || (!board.phase && !board.week)) {
+  if (
+    board.phase_category === undefined ||
+    board.week_category === undefined ||
+    (!board.phase && !board.week)
+  ) {
     const cat = autoExtractPhaseAndWeek(board.name || "");
     if (cat.phase && !board.phase) board.phase = cat.phase;
     if (cat.week && !board.week) board.week = cat.week;
@@ -267,7 +273,7 @@ export async function duplicateBoard(id: string): Promise<BoardRecord | null> {
 export async function renameBoard(id: string, name: string): Promise<BoardRecord | null> {
   const b = await getBoard(id);
   if (!b) return null;
-  const newName = (name && name.length > 0) ? name : "Untitled";
+  const newName = name && name.length > 0 ? name : "Untitled";
   b.name = newName;
   b.updatedAt = Date.now();
   const cat = autoExtractPhaseAndWeek(newName);

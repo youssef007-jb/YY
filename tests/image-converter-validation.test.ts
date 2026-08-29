@@ -14,7 +14,7 @@ function validateAndSanitizeConversion(
   rawObjects: any[],
   width = 1200,
   height = 800,
-  detectedTitle = "Converted Whiteboard"
+  detectedTitle = "Converted Whiteboard",
 ): ConversionResponse {
   const validObjects: any[] = [];
   let textCount = 0;
@@ -65,7 +65,17 @@ function validateAndSanitizeConversion(
         break;
       }
       case "shape": {
-        const allowedShapes = ["rect", "roundRect", "circle", "ellipse", "triangle", "diamond", "star", "hexagon", "heart"];
+        const allowedShapes = [
+          "rect",
+          "roundRect",
+          "circle",
+          "ellipse",
+          "triangle",
+          "diamond",
+          "star",
+          "hexagon",
+          "heart",
+        ];
         const sType = allowedShapes.includes(obj.shapeType) ? obj.shapeType : "rect";
         validObjects.push({
           type: "shape",

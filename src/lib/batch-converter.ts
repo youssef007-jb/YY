@@ -1,7 +1,7 @@
 /**
  * Fast Batch Whiteboard Conversion Engine with Controlled Concurrency
  * Converts batches of PNG/JPG/Smart PNG files into native YY Whiteboards asynchronously.
- * 
+ *
  * Features:
  * - Worker pool with controlled concurrency (default: 3 concurrent AI requests)
  * - Non-blocking: background processing while UI remains fully responsive
@@ -208,7 +208,10 @@ export class BatchConversionQueue {
       return null;
     } finally {
       this.emitProgress();
-      if (this.activeCount === 0 && !this.items.some((i) => i.status === "processing" || i.status === "pending")) {
+      if (
+        this.activeCount === 0 &&
+        !this.items.some((i) => i.status === "processing" || i.status === "pending")
+      ) {
         const state = this.getProgress();
         this.onAllFinished?.(this.completedBoards, state);
       }
@@ -499,7 +502,7 @@ export class BatchConversionQueue {
     const prepared = await prepareImageForAnalysis(file);
 
     let reconstructedElements: any[] = [];
-    let detectedTitle = item.boardTitle;
+    const detectedTitle = item.boardTitle;
     let boundsCenter = { x: 0, y: 0 };
 
     item.statusText = "Reconstructing with AI vision...";
@@ -513,7 +516,7 @@ export class BatchConversionQueue {
       (status) => {
         item.statusText = status;
         this.emitProgress();
-      }
+      },
     );
 
     const reconstructed = reconstructWhiteboardElements(aiResult, prepared.originalImg, {

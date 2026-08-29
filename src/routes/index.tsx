@@ -41,10 +41,7 @@ import { renderPdfToImages } from "@/lib/pdf-importer";
 import { generateBoardThumbnail } from "@/lib/thumbnail-generator";
 import { embedSmartPngMetadata, extractSmartPngMetadata } from "@/lib/smart-png";
 import { stripFileExtension, buildDownloadFilename } from "@/lib/filename-utils";
-import {
-  BatchConversionQueue,
-  type BatchProgressState,
-} from "@/lib/batch-converter";
+import { BatchConversionQueue, type BatchProgressState } from "@/lib/batch-converter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -206,9 +203,7 @@ function IosSwipeToDeleteModal({
           <h3 className="text-lg font-semibold text-white">
             {t("deleteConfirmTitle", { name: board.name })}
           </h3>
-          <p className="mt-2 text-xs leading-relaxed text-slate-300">
-            {t("deleteConfirmDesc")}
-          </p>
+          <p className="mt-2 text-xs leading-relaxed text-slate-300">{t("deleteConfirmDesc")}</p>
         </div>
 
         {/* iPhone Style Slide to Delete Slider */}
@@ -301,7 +296,9 @@ function BoardThumbnail({ board }: { board: BoardRecord }) {
       <div className="relative flex h-full w-full items-center justify-center bg-slate-50 dark:bg-slate-900/50 p-4">
         <div className="flex flex-col items-center gap-1.5 text-muted-foreground">
           <PanelsTopLeft className="h-6 w-6 opacity-60" />
-          <span className="text-[11px] font-medium opacity-80">{elements.length} item{elements.length === 1 ? "" : "s"}</span>
+          <span className="text-[11px] font-medium opacity-80">
+            {elements.length} item{elements.length === 1 ? "" : "s"}
+          </span>
         </div>
       </div>
     );
@@ -411,7 +408,9 @@ function BoardCard({
             <>
               <p className="truncate text-sm font-semibold text-foreground">{b.name}</p>
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                <p className="text-[11px] text-muted-foreground">{t("editedAgo", { t: timeAgo(b.updatedAt) })}</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {t("editedAgo", { t: timeAgo(b.updatedAt) })}
+                </p>
                 {b.phase && (
                   <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
                     {b.phase}
@@ -459,7 +458,10 @@ function BoardCard({
   );
 }
 
-function BoardGrid(props: { boards: BoardRecord[]; cardProps: (b: BoardRecord) => React.ComponentProps<typeof BoardCard> }) {
+function BoardGrid(props: {
+  boards: BoardRecord[];
+  cardProps: (b: BoardRecord) => React.ComponentProps<typeof BoardCard>;
+}) {
   return (
     <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
       {props.boards.map((b) => (
@@ -620,10 +622,13 @@ function HomePage() {
 
   const handleDownload = async (b: BoardRecord) => {
     try {
-      const elements = ((b.elements || []) as any[]);
+      const elements = (b.elements || []) as any[];
       const pad = 60;
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      
+      let minX = Infinity,
+        minY = Infinity,
+        maxX = -Infinity,
+        maxY = -Infinity;
+
       if (elements.length > 0) {
         for (const el of elements) {
           if (el.points && Array.isArray(el.points) && el.points.length) {
@@ -645,11 +650,14 @@ function HomePage() {
           }
         }
       }
-      
+
       if (!isFinite(minX) || !isFinite(minY)) {
-        minX = 0; minY = 0; maxX = 1200; maxY = 800;
+        minX = 0;
+        minY = 0;
+        maxX = 1200;
+        maxY = 800;
       }
-      
+
       const width = Math.max(600, Math.ceil(maxX - minX + pad * 2));
       const height = Math.max(400, Math.ceil(maxY - minY + pad * 2));
       const canvas = document.createElement("canvas");
@@ -659,11 +667,11 @@ function HomePage() {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.scale(dpr, dpr);
-      
+
       // Draw background
       ctx.fillStyle = b.bgColor || "#fafafa";
       ctx.fillRect(0, 0, width, height);
-      
+
       // Pre-load images if any
       const imagePromises: Promise<void>[] = [];
       const loadedImages = new Map<string, HTMLImageElement>();
@@ -672,7 +680,10 @@ function HomePage() {
           const p = new Promise<void>((res) => {
             const img = new Image();
             img.crossOrigin = "anonymous";
-            img.onload = () => { loadedImages.set(el.src, img); res(); };
+            img.onload = () => {
+              loadedImages.set(el.src, img);
+              res();
+            };
             img.onerror = () => res();
             img.src = el.src;
           });
@@ -680,13 +691,17 @@ function HomePage() {
         }
       }
       await Promise.all(imagePromises);
-      
+
       ctx.translate(-minX + pad, -minY + pad);
-      
+
       for (const el of elements) {
         ctx.save();
-        const bx = el.x ?? 0, by = el.y ?? 0, bw = el.w ?? 100, bh = el.h ?? 60;
-        const cx = bx + bw / 2, cy = by + bh / 2;
+        const bx = el.x ?? 0,
+          by = el.y ?? 0,
+          bw = el.w ?? 100,
+          bh = el.h ?? 60;
+        const cx = bx + bw / 2,
+          cy = by + bh / 2;
         if (el.rotation) {
           ctx.translate(cx, cy);
           ctx.rotate((el.rotation * Math.PI) / 180);
@@ -697,8 +712,11 @@ function HomePage() {
         ctx.lineWidth = el.width || 2;
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
-        
-        if ((el.type === "pen" || el.type === "highlighter" || el.type === "vanishing") && el.points) {
+
+        if (
+          (el.type === "pen" || el.type === "highlighter" || el.type === "vanishing") &&
+          el.points
+        ) {
           if (el.type === "highlighter") ctx.globalAlpha = 0.4;
           ctx.beginPath();
           el.points.forEach((pt: { x: number; y: number }, idx: number) => {
@@ -720,7 +738,15 @@ function HomePage() {
           }
         } else if (el.type === "circle" || el.type === "ellipse") {
           ctx.beginPath();
-          ctx.ellipse(bx + bw / 2, by + bh / 2, Math.abs(bw / 2), Math.abs(bh / 2), 0, 0, Math.PI * 2);
+          ctx.ellipse(
+            bx + bw / 2,
+            by + bh / 2,
+            Math.abs(bw / 2),
+            Math.abs(bh / 2),
+            0,
+            0,
+            Math.PI * 2,
+          );
           ctx.stroke();
         } else if (el.type === "triangle") {
           ctx.beginPath();
@@ -738,7 +764,8 @@ function HomePage() {
           ctx.closePath();
           ctx.stroke();
         } else if (el.type === "star") {
-          const scx = bx + bw / 2, scy = by + bh / 2;
+          const scx = bx + bw / 2,
+            scy = by + bh / 2;
           const outerR = Math.min(Math.abs(bw), Math.abs(bh)) / 2;
           const innerR = outerR * 0.45;
           ctx.beginPath();
@@ -750,11 +777,15 @@ function HomePage() {
           ctx.closePath();
           ctx.stroke();
         } else if (el.type === "hexagon") {
-          const hcx = bx + bw / 2, hcy = by + bh / 2, rx = bw / 2, ry = bh / 2;
+          const hcx = bx + bw / 2,
+            hcy = by + bh / 2,
+            rx = bw / 2,
+            ry = bh / 2;
           ctx.beginPath();
           for (let i = 0; i < 6; i++) {
             const a = (Math.PI / 3) * i - Math.PI / 6;
-            const px = hcx + Math.cos(a) * rx, py = hcy + Math.sin(a) * ry;
+            const px = hcx + Math.cos(a) * rx,
+              py = hcy + Math.sin(a) * ry;
             if (i === 0) ctx.moveTo(px, py);
             else ctx.lineTo(px, py);
           }
@@ -767,14 +798,14 @@ function HomePage() {
           const sz = el.size || 16;
           ctx.font = `${sz}px Segoe UI,Inter,sans-serif`;
           ctx.textBaseline = "top";
-          const lines = String(el.isPlaceholder ? "" : (el.text || "")).split("\n");
+          const lines = String(el.isPlaceholder ? "" : el.text || "").split("\n");
           lines.forEach((l, idx) => ctx.fillText(l, bx + 10, by + 10 + idx * sz * 1.3));
         } else if (el.type === "text") {
           ctx.fillStyle = el.color || "#111827";
           const sz = el.size || 18;
           ctx.font = `${el.bold ? "bold " : ""}${el.italic ? "italic " : ""}${sz}px ${el.font || "Segoe UI,Inter,sans-serif"}`;
           ctx.textBaseline = "top";
-          const lines = String(el.isPlaceholder ? "" : (el.text || "")).split("\n");
+          const lines = String(el.isPlaceholder ? "" : el.text || "").split("\n");
           lines.forEach((l, idx) => ctx.fillText(l, bx, by + idx * sz * 1.25));
         } else if (el.type === "image" && el.src) {
           const img = loadedImages.get(el.src);
@@ -783,7 +814,12 @@ function HomePage() {
           ctx.font = `${bw || 32}px sans-serif`;
           ctx.textBaseline = "top";
           ctx.fillText(el.text || "⭐", bx, by);
-        } else if (el.type === "line" || el.type === "arrow" || el.type === "dashed" || el.type === "doubleArrow") {
+        } else if (
+          el.type === "line" ||
+          el.type === "arrow" ||
+          el.type === "dashed" ||
+          el.type === "doubleArrow"
+        ) {
           if (el.type === "dashed") ctx.setLineDash([8, 6]);
           ctx.beginPath();
           ctx.moveTo(bx, by);
@@ -793,9 +829,9 @@ function HomePage() {
         }
         ctx.restore();
       }
-      
+
       const filename = buildDownloadFilename(b.name, "png");
-      
+
       canvas.toBlob(async (blob) => {
         if (!blob) return;
         try {
@@ -831,7 +867,8 @@ function HomePage() {
     const files = Array.from(fileList);
 
     const isPdf = (f: File) => f.type === "application/pdf" || /\.pdf$/i.test(f.name);
-    const isImageFile = (f: File) => f.type.startsWith("image/") || /\.(png|jpe?g|webp|svg|gif|bmp|avif)$/i.test(f.name);
+    const isImageFile = (f: File) =>
+      f.type.startsWith("image/") || /\.(png|jpe?g|webp|svg|gif|bmp|avif)$/i.test(f.name);
     const isJsonFile = (f: File) => f.type === "application/json" || /\.json$/i.test(f.name);
 
     try {
@@ -890,17 +927,20 @@ function HomePage() {
             const imgDim = await new Promise<{ w: number; h: number }>((resolve) => {
               const img = new Image();
               img.onload = () => {
-                const maxDim = 540;
-                let w = img.naturalWidth || img.width || 480;
-                let h = img.naturalHeight || img.height || 360;
-                if (w > maxDim || h > maxDim) {
-                  if (w >= h) {
-                    h = Math.round((h / w) * maxDim);
-                    w = maxDim;
-                  } else {
-                    w = Math.round((w / h) * maxDim);
-                    h = maxDim;
-                  }
+                const vw =
+                  typeof window !== "undefined" && window.innerWidth ? window.innerWidth : 1200;
+                const vh =
+                  typeof window !== "undefined" && window.innerHeight ? window.innerHeight : 800;
+                const maxW = Math.max(300, vw - 160);
+                const maxH = Math.max(200, vh - 160);
+                const origW = img.naturalWidth || img.width || 800;
+                const origH = img.naturalHeight || img.height || 600;
+                let w = origW;
+                let h = origH;
+                if (origW > maxW || origH > maxH) {
+                  const scale = Math.min(maxW / origW, maxH / origH);
+                  w = Math.round(origW * scale);
+                  h = Math.round(origH * scale);
                 }
                 resolve({ w, h });
               };
@@ -961,7 +1001,11 @@ function HomePage() {
               const boardName = item.name || cleanName;
               const jsonCat = autoExtractPhaseAndWeek(boardName);
               let rawEls = Array.isArray(item.elements) ? item.elements : [];
-              if (rawEls.length === 0 && Array.isArray((item as any).layers) && (item as any).layers.length > 0) {
+              if (
+                rawEls.length === 0 &&
+                Array.isArray((item as any).layers) &&
+                (item as any).layers.length > 0
+              ) {
                 const layerEls = (item as any).layers[0]?.elements;
                 if (Array.isArray(layerEls)) rawEls = layerEls;
               }
@@ -1002,11 +1046,12 @@ function HomePage() {
       }
 
       const firstTitle = separateBoards[0]?.name ?? "Untitled";
-      const combinedTitle = separateBoards.length === 1
-        ? firstTitle
-        : separateBoards.length <= 3
-        ? separateBoards.map((e) => e.name).join(", ")
-        : `${firstTitle} & ${separateBoards.length - 1} more`;
+      const combinedTitle =
+        separateBoards.length === 1
+          ? firstTitle
+          : separateBoards.length <= 3
+            ? separateBoards.map((e) => e.name).join(", ")
+            : `${firstTitle} & ${separateBoards.length - 1} more`;
 
       const combinedCat = autoExtractPhaseAndWeek(combinedTitle);
       const combinedBoard: BoardRecord = {
@@ -1019,6 +1064,7 @@ function HomePage() {
         week_category: combinedCat.week_category,
         createdAt: baseTime + separateBoards.length * 10,
         updatedAt: baseTime + separateBoards.length * 10,
+        needsFitToScreen: true,
         elements: combinedElements,
       };
 
@@ -1352,9 +1398,7 @@ function HomePage() {
   };
 
   const isSearching = search.trim().length > 0;
-  const currentVisible = hasPhaseSelected
-    ? activePhaseBoards
-    : searchedBoards;
+  const currentVisible = hasPhaseSelected ? activePhaseBoards : searchedBoards;
   const isAllVisibleSelected =
     currentVisible.length > 0 && currentVisible.every((b) => selectedIds.has(b.id));
 
@@ -1429,11 +1473,22 @@ function HomePage() {
               src="/app-logo.png"
               alt="Yow Yow"
               className="h-8 w-8 object-contain shrink-0"
-              style={{ width: "32px", height: "32px", objectFit: "contain", background: "transparent", borderRadius: "6px", border: "none", boxShadow: "none", padding: 0 }}
+              style={{
+                width: "32px",
+                height: "32px",
+                objectFit: "contain",
+                background: "transparent",
+                borderRadius: "6px",
+                border: "none",
+                boxShadow: "none",
+                padding: 0,
+              }}
               referrerPolicy="no-referrer"
             />
             <div>
-              <h1 className="text-base sm:text-lg font-semibold tracking-tight leading-tight">{t("appTitle")}</h1>
+              <h1 className="text-base sm:text-lg font-semibold tracking-tight leading-tight">
+                {t("appTitle")}
+              </h1>
               <p className="text-[11px] sm:text-xs text-muted-foreground leading-tight">
                 {boards
                   ? totalCount === 1
@@ -1515,7 +1570,16 @@ function HomePage() {
               src="/app-logo.png"
               alt="Yow Yow"
               className="mb-4 h-14 w-14 object-contain shrink-0"
-              style={{ width: "56px", height: "56px", objectFit: "contain", background: "transparent", borderRadius: "6px", border: "none", boxShadow: "none", padding: 0 }}
+              style={{
+                width: "56px",
+                height: "56px",
+                objectFit: "contain",
+                background: "transparent",
+                borderRadius: "6px",
+                border: "none",
+                boxShadow: "none",
+                padding: 0,
+              }}
               referrerPolicy="no-referrer"
             />
             <h2 className="text-base font-semibold">{t("noBoardsTitle")}</h2>
@@ -1552,7 +1616,9 @@ function HomePage() {
                       <div className="flex items-center justify-between gap-3 pb-1 border-b border-border/60">
                         <div className="flex items-center gap-2">
                           <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                            {week === UNASSIGNED_WEEK_VALUE ? t("unassignedWeek") : t("weekLabel", { w: week })}
+                            {week === UNASSIGNED_WEEK_VALUE
+                              ? t("unassignedWeek")
+                              : t("weekLabel", { w: week })}
                           </h3>
                           <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
                             {wb.length}
@@ -1638,7 +1704,10 @@ function HomePage() {
         />
       )}
 
-      <Dialog open={editingDetails !== null} onOpenChange={(open) => !open && setEditingDetails(null)}>
+      <Dialog
+        open={editingDetails !== null}
+        onOpenChange={(open) => !open && setEditingDetails(null)}
+      >
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{t("editBoardDetails")}</DialogTitle>
@@ -1674,7 +1743,10 @@ function HomePage() {
       </Dialog>
 
       {/* Batch Assign Category Dialog */}
-      <Dialog open={batchCategoryOpen} onOpenChange={(open) => !open && setBatchCategoryOpen(false)}>
+      <Dialog
+        open={batchCategoryOpen}
+        onOpenChange={(open) => !open && setBatchCategoryOpen(false)}
+      >
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{t("batchCategoryTitle", { n: selectedIds.size })}</DialogTitle>
@@ -1744,24 +1816,29 @@ function HomePage() {
               <Upload className="h-5 w-5" />
             </div>
             <DialogTitle className="text-base font-bold">
-              {uploadPrompt?.smartCount && uploadPrompt?.smartCount > 0 && (!uploadPrompt?.normalCount || uploadPrompt?.normalCount === 0)
+              {uploadPrompt?.smartCount &&
+              uploadPrompt?.smartCount > 0 &&
+              (!uploadPrompt?.normalCount || uploadPrompt?.normalCount === 0)
                 ? uploadPrompt.smartCount === 1
                   ? "Editable Whiteboard Detected"
                   : `${uploadPrompt.smartCount} Editable Whiteboards Detected`
                 : uploadPrompt?.fileCount === 1
-                ? "File Uploaded Successfully"
-                : `${uploadPrompt?.fileCount || 0} Files Uploaded Successfully`}
+                  ? "File Uploaded Successfully"
+                  : `${uploadPrompt?.fileCount || 0} Files Uploaded Successfully`}
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              {uploadPrompt?.smartCount && uploadPrompt?.smartCount > 0 && uploadPrompt?.normalCount && uploadPrompt?.normalCount > 0
+              {uploadPrompt?.smartCount &&
+              uploadPrompt?.smartCount > 0 &&
+              uploadPrompt?.normalCount &&
+              uploadPrompt?.normalCount > 0
                 ? `${uploadPrompt.smartCount} editable whiteboard${uploadPrompt.smartCount > 1 ? "s" : ""} detected · ${uploadPrompt.normalCount} image${uploadPrompt.normalCount > 1 ? "s" : ""}/file${uploadPrompt.normalCount > 1 ? "s" : ""} require conversion`
                 : uploadPrompt?.smartCount && uploadPrompt?.smartCount > 0
-                ? uploadPrompt.smartCount === 1
-                  ? `"${uploadPrompt.separateBoards[0]?.name}" contains native editable whiteboard elements and will be imported directly.`
-                  : `All ${uploadPrompt.smartCount} files contain native editable whiteboard elements and will be imported directly.`
-                : uploadPrompt?.fileCount === 1
-                ? `"${uploadPrompt.separateBoards[0]?.name}" is ready. Convert it into editable whiteboard elements, open it immediately, or save it to your homepage.`
-                : `Choose "Convert all" to reconstruct each file into a separate editable whiteboard, "Open all in 1 board" to combine them, or "Back to homepage" to save image boards.`}
+                  ? uploadPrompt.smartCount === 1
+                    ? `"${uploadPrompt.separateBoards[0]?.name}" contains native editable whiteboard elements and will be imported directly.`
+                    : `All ${uploadPrompt.smartCount} files contain native editable whiteboard elements and will be imported directly.`
+                  : uploadPrompt?.fileCount === 1
+                    ? `"${uploadPrompt.separateBoards[0]?.name}" is ready. Convert it into editable whiteboard elements, open it immediately, or save it to your homepage.`
+                    : `Choose "Convert all" to reconstruct each file into a separate editable whiteboard, "Open all in 1 board" to combine them, or "Back to homepage" to save image boards.`}
             </DialogDescription>
           </DialogHeader>
 
@@ -1790,22 +1867,30 @@ function HomePage() {
                 onClick={handleConvertAll}
                 className="w-full rounded-xl text-xs font-semibold gap-1.5 h-9 px-2.5 truncate shadow-sm bg-primary text-primary-foreground hover:bg-primary/90"
                 title={
-                  uploadPrompt?.normalCount && uploadPrompt.normalCount > 0 && uploadPrompt?.smartCount && uploadPrompt.smartCount > 0
+                  uploadPrompt?.normalCount &&
+                  uploadPrompt.normalCount > 0 &&
+                  uploadPrompt?.smartCount &&
+                  uploadPrompt.smartCount > 0
                     ? `Convert ${uploadPrompt.normalCount} files to Whiteboard`
                     : uploadPrompt?.normalCount && uploadPrompt.normalCount > 0
-                    ? uploadPrompt?.fileCount === 1 ? "Convert to Whiteboard" : `Convert all (${uploadPrompt?.fileCount || 0})`
-                    : `Import to dashboard (${uploadPrompt?.smartCount || 0})`
+                      ? uploadPrompt?.fileCount === 1
+                        ? "Convert to Whiteboard"
+                        : `Convert all (${uploadPrompt?.fileCount || 0})`
+                      : `Import to dashboard (${uploadPrompt?.smartCount || 0})`
                 }
               >
                 <Sparkles className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">
-                  {uploadPrompt?.normalCount && uploadPrompt.normalCount > 0 && uploadPrompt?.smartCount && uploadPrompt.smartCount > 0
+                  {uploadPrompt?.normalCount &&
+                  uploadPrompt.normalCount > 0 &&
+                  uploadPrompt?.smartCount &&
+                  uploadPrompt.smartCount > 0
                     ? `Convert remaining (${uploadPrompt.normalCount})`
                     : uploadPrompt?.normalCount && uploadPrompt.normalCount > 0
-                    ? uploadPrompt?.fileCount === 1
-                      ? "Convert to Whiteboard"
-                      : `Convert all (${uploadPrompt?.fileCount || 0})`
-                    : `Import to dashboard (${uploadPrompt?.smartCount || 0})`}
+                      ? uploadPrompt?.fileCount === 1
+                        ? "Convert to Whiteboard"
+                        : `Convert all (${uploadPrompt?.fileCount || 0})`
+                      : `Import to dashboard (${uploadPrompt?.smartCount || 0})`}
                 </span>
               </Button>
             </div>
@@ -1886,7 +1971,11 @@ function HomePage() {
                   className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
                   title={batchExpanded ? "Collapse" : "Expand"}
                 >
-                  {batchExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                  {batchExpanded ? (
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  )}
                 </Button>
                 {batchProgress.isFinished ? (
                   <Button
@@ -1944,23 +2033,25 @@ function HomePage() {
                         )}
                         {item.status === "processing" && (
                           <span className="text-primary font-medium flex items-center gap-1">
-                            <Loader2 className="h-3 w-3 animate-spin" /> {item.statusText || "Converting"}
+                            <Loader2 className="h-3 w-3 animate-spin" />{" "}
+                            {item.statusText || "Converting"}
                           </span>
                         )}
                         {item.status === "pending" && (
                           <span className="text-muted-foreground">Queued</span>
                         )}
                         {item.status === "failed" && (
-                          <span className="text-destructive font-medium">
-                            Failed
-                          </span>
+                          <span className="text-destructive font-medium">Failed</span>
                         )}
                       </span>
                     </div>
 
                     {item.status === "failed" && (
                       <div className="flex items-center justify-between gap-2 pt-0.5 border-t border-border/40">
-                        <span className="text-[10px] text-destructive truncate max-w-[170px]" title={item.error}>
+                        <span
+                          className="text-[10px] text-destructive truncate max-w-[170px]"
+                          title={item.error}
+                        >
                           {item.error || "Conversion failed"}
                         </span>
                         <div className="flex items-center gap-1 shrink-0">
@@ -1995,7 +2086,10 @@ function HomePage() {
 
       {/* Floating Multi-Selection Action Bar */}
       {selectedIds.size > 0 && (
-        <aside aria-label="Batch actions toolbar" className="fixed bottom-6 inset-x-0 z-50 flex justify-center px-4 pointer-events-none animate-in fade-in slide-in-from-bottom-5 duration-200">
+        <aside
+          aria-label="Batch actions toolbar"
+          className="fixed bottom-6 inset-x-0 z-50 flex justify-center px-4 pointer-events-none animate-in fade-in slide-in-from-bottom-5 duration-200"
+        >
           <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 rounded-2xl border border-border/80 bg-background/95 p-1.5 shadow-2xl backdrop-blur-md">
             <div className="flex items-center gap-2 pl-3 pr-2 py-1">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">

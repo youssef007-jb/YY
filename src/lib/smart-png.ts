@@ -79,8 +79,8 @@ function createTextChunk(keyword: string, textData: string): Uint8Array {
 
   // 2. Type ('tEXt')
   chunk[4] = 116; // 't'
-  chunk[5] = 69;  // 'E'
-  chunk[6] = 88;  // 'X'
+  chunk[5] = 69; // 'E'
+  chunk[6] = 88; // 'X'
   chunk[7] = 116; // 't'
 
   // 3. Data
@@ -109,7 +109,7 @@ export function isPngBuffer(buffer: Uint8Array): boolean {
  */
 export async function embedSmartPngMetadata(
   pngInput: Blob | ArrayBuffer | Uint8Array,
-  boardData: Partial<SmartCanvasPayload> & { elements: any[]; name?: string }
+  boardData: Partial<SmartCanvasPayload> & { elements: any[]; name?: string },
 ): Promise<Blob> {
   let sourceBytes: Uint8Array;
   if (pngInput instanceof Blob) {
@@ -159,7 +159,7 @@ export async function embedSmartPngMetadata(
   // IHDR starts at offset 8, length is 13, plus 4 bytes len + 4 bytes type + 13 bytes data + 4 bytes crc = 25 bytes
   // So offset 8 + 25 = 33 is right after IHDR.
   let insertOffset = 33;
-  
+
   // Verify IHDR location dynamically just in case
   const view = new DataView(sourceBytes.buffer, sourceBytes.byteOffset, sourceBytes.byteLength);
   if (sourceBytes.length > 16) {
@@ -167,7 +167,7 @@ export async function embedSmartPngMetadata(
       sourceBytes[12] ?? 0,
       sourceBytes[13] ?? 0,
       sourceBytes[14] ?? 0,
-      sourceBytes[15] ?? 0
+      sourceBytes[15] ?? 0,
     );
     if (chunkType === "IHDR") {
       const ihdrLen = view.getUint32(8, false);
@@ -193,7 +193,7 @@ export async function embedSmartPngMetadata(
  * Returns null if no Smart Canvas metadata is found (i.e. standard PNG).
  */
 export async function extractSmartPngMetadata(
-  input: File | Blob | ArrayBuffer | Uint8Array
+  input: File | Blob | ArrayBuffer | Uint8Array,
 ): Promise<SmartCanvasPayload | null> {
   let bytes: Uint8Array;
   try {
@@ -224,7 +224,7 @@ export async function extractSmartPngMetadata(
       bytes[offset + 4] ?? 0,
       bytes[offset + 5] ?? 0,
       bytes[offset + 6] ?? 0,
-      bytes[offset + 7] ?? 0
+      bytes[offset + 7] ?? 0,
     );
 
     const dataStart = offset + 8;
@@ -307,12 +307,15 @@ function parseCanvasTextData(rawText: string): SmartCanvasPayload | null {
       clean = clean.slice(PAYLOAD_SIGNATURE_PREFIX.length);
     }
     const data = JSON.parse(clean);
-    if (data && (Array.isArray(data.elements) || Array.isArray(data.layers) || Array.isArray(data))) {
+    if (
+      data &&
+      (Array.isArray(data.elements) || Array.isArray(data.layers) || Array.isArray(data))
+    ) {
       const rawElements = Array.isArray(data.elements)
         ? data.elements
         : Array.isArray(data)
-        ? data
-        : data.layers?.[0]?.elements || [];
+          ? data
+          : data.layers?.[0]?.elements || [];
 
       return {
         version: data.version || 1,

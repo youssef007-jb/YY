@@ -2,11 +2,7 @@ import { useEffect } from "react";
 import markup from "../whiteboard-markup.html?raw";
 import { getBoard, getWorkspaceBoardPayload, type BoardRecord } from "@/lib/boards-db";
 import { renderPdfToImages } from "@/lib/pdf-importer";
-import {
-  embedSmartPngMetadata,
-  extractSmartPngMetadata,
-  isSmartPngFile,
-} from "@/lib/smart-png";
+import { embedSmartPngMetadata, extractSmartPngMetadata, isSmartPngFile } from "@/lib/smart-png";
 import {
   prepareImageForAnalysis,
   analyzeWhiteboardImage,
@@ -55,13 +51,7 @@ type HbiboWindow = {
   };
 };
 
-export function WhiteboardHost({
-  boardId,
-  onHome,
-}: {
-  boardId: string;
-  onHome?: () => void;
-}) {
+export function WhiteboardHost({ boardId, onHome }: { boardId: string; onHome?: () => void }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -119,4 +109,3 @@ export function WhiteboardHost({
     />
   );
 }
-

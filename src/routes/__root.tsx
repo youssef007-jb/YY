@@ -78,9 +78,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Yow Yow — Smart Whiteboard" },
-      { name: "description", content: "Interactive whiteboard and smart canvas with drawing tools, collaboration features, and board management." },
+      {
+        name: "description",
+        content:
+          "Interactive whiteboard and smart canvas with drawing tools, collaboration features, and board management.",
+      },
       { property: "og:title", content: "Yow Yow — Smart Whiteboard" },
-      { property: "og:description", content: "Interactive whiteboard and smart canvas with drawing tools, collaboration features, and board management." },
+      {
+        property: "og:description",
+        content:
+          "Interactive whiteboard and smart canvas with drawing tools, collaboration features, and board management.",
+      },
       { property: "og:image", content: "/app-logo.png" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
