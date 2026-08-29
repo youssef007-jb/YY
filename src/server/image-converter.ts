@@ -409,7 +409,7 @@ Output STRICT JSON in this exact structure:
             y: Math.max(0, Math.round(Number(obj.y) || 0)),
             width: Math.min(width, w),
             height: Math.min(height, h),
-            description: typeof obj.description === "string" ? obj.description : undefined,
+            ...(typeof obj.description === "string" ? { description: obj.description } : {}),
           });
           imagesCount++;
         }
