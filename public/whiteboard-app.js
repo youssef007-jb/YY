@@ -2154,7 +2154,8 @@ function createInlineEditor(wp,existing=null,opts={}){
       e.stopPropagation();
     }, { passive: true });
   } else {
-    inlineEditor.style.cssText=`padding:${pad}px;margin:0;border:0;color:${existing.color||DEFAULT_TEXT_COLOR};font-size:${(existing.size||18)*z}px;font-family:${existing.font||"Segoe UI,Inter,system-ui,sans-serif"};font-weight:${existing.bold?"700":"400"};font-style:${existing.italic?"italic":"normal"};text-decoration:${existing.underline?"underline":"none"};outline:none;line-height:1.25;width:100%;height:100%;background:transparent;white-space:pre;box-sizing:border-box;caret-color:${existing.color||DEFAULT_TEXT_COLOR};overflow:visible;`;
+    const wrapCss = isManualWidthText(existing) ? "white-space:pre-wrap;word-break:break-word;overflow:hidden;" : "white-space:pre;overflow:visible;";
+    inlineEditor.style.cssText=`padding:${pad}px;margin:0;border:0;color:${existing.color||DEFAULT_TEXT_COLOR};font-size:${(existing.size||18)*z}px;font-family:${existing.font||"Segoe UI,Inter,system-ui,sans-serif"};font-weight:${existing.bold?"700":"400"};font-style:${existing.italic?"italic":"normal"};text-decoration:${existing.underline?"underline":"none"};outline:none;line-height:1.25;width:100%;height:100%;background:transparent;box-sizing:border-box;caret-color:${existing.color||DEFAULT_TEXT_COLOR};${wrapCss}`;
   }
   inlineBox.appendChild(inlineEditor);
   host.appendChild(inlineBox);
