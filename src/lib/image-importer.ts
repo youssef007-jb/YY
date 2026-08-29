@@ -203,7 +203,7 @@ export function reconstructWhiteboardElements(
   options: ReconstructOptions = {}
 ): {
   elements: PreparedWhiteboardObject[];
-  originalImageElement?: PreparedWhiteboardObject;
+  originalImageElement?: PreparedWhiteboardObject | undefined;
   bounds: { x: number; y: number; width: number; height: number };
   title: string;
 } {
@@ -241,7 +241,8 @@ export function reconstructWhiteboardElements(
   const textElements: PreparedWhiteboardObject[] = [];
   const connectorElements: PreparedWhiteboardObject[] = [];
 
-  for (const obj of result.objects) {
+  for (const rawObj of result.objects) {
+    const obj = rawObj as any;
     if (!obj || !obj.type) continue;
 
     switch (obj.type) {

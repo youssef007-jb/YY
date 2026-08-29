@@ -1,24 +1,13 @@
-import { GoogleGenAI } from "@google/genai";
+const AI_GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 
-let genAiClient: GoogleGenAI | null = null;
-
-function getGemini(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY;
+function getAiKey(): string {
+  const apiKey = process.env["LOVABLE_API_KEY"];
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY environment variable is not configured. Please set your Gemini API key.");
+    throw new Error("AI service is not configured for this project.");
   }
-  if (!genAiClient) {
-    genAiClient = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        },
-      },
-    });
-  }
-  return genAiClient;
+  return apiKey;
 }
+
 
 export interface ConvertImageRequest {
   imageBase64: string;
@@ -122,9 +111,8 @@ export interface ConversionResponse {
 
 // Candidate models in order of capability, quality, and availability
 const CANDIDATE_MODELS = [
-  "gemini-3.7-flash",
-  "gemini-flash-latest",
-  "gemini-3.1-flash-lite",
+  "google/gemini-2.5-flash",
+  "google/gemini-2.5-flash-lite",
 ];
 
 function cleanErrorMessage(rawError: unknown): string {
@@ -168,7 +156,7 @@ async function sleep(ms: number): Promise<void> {
 }
 
 export async function convertWhiteboardImage(req: ConvertImageRequest): Promise<ConversionResponse> {
-  const ai = getGemini();
+  const apiKey = getAiKey();
   const { imageBase64, mimeType, width, height } = req;
 
   // Clean base64 string if data URL prefix was passed
@@ -232,32 +220,42 @@ Output STRICT JSON in this exact structure:
           await sleep(500);
         }
 
-        const response = await ai.models.generateContent({
-          model: modelName,
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  inlineData: {
-                    mimeType: mimeType || "image/png",
-                    data: cleanBase64,
-                  },
-                },
-                {
-                  text: prompt,
-                },
-              ],
-            },
-          ],
-          config: {
-            responseMimeType: "application/json",
-            temperature: 0.1,
+        const res = await fetch(AI_GATEWAY_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
           },
+          body: JSON.stringify({
+            model: modelName,
+            temperature: 0.1,
+            response_format: { type: "json_object" },
+            messages: [
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: prompt },
+                  {
+                    type: "image_url",
+                    image_url: { url: `data:${mimeType || "image/png"};base64,${cleanBase64}` },
+                  },
+                ],
+              },
+            ],
+          }),
         });
 
-        if (response && response.text) {
-          responseText = response.text;
+        if (!res.ok) {
+          const errBody = await res.text().catch(() => "");
+          throw new Error(`${res.status} ${errBody}`);
+        }
+
+        const json = (await res.json()) as {
+          choices?: Array<{ message?: { content?: string } }>;
+        };
+        const content = json.choices?.[0]?.message?.content;
+        if (content) {
+          responseText = content;
           break;
         }
       } catch (err: any) {
@@ -411,7 +409,7 @@ Output STRICT JSON in this exact structure:
             y: Math.max(0, Math.round(Number(obj.y) || 0)),
             width: Math.min(width, w),
             height: Math.min(height, h),
-            description: typeof obj.description === "string" ? obj.description : undefined,
+            ...(typeof obj.description === "string" ? { description: obj.description } : {}),
           });
           imagesCount++;
         }
