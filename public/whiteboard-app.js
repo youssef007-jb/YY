@@ -143,7 +143,7 @@ const state={
   camera:{x:0,y:0,zoom:1},elements:[],undoStack:[],redoStack:[],currentElement:null,
   selectedIds:[],selectedId:null,transform:{mode:null,handle:null,startMouse:{},startEl:null,startBounds:null,center:{}},
   clicks:0,isTransforming:false,isDrawing:false,isPanning:false,panStart:{x:0,y:0},prevTool:null,tempPan:false,panDidMove:false,panButton:0,
-  inlineEditingId:null,rightClickPos:{},pendingPlace:null,editArmed:null,hoveredId:null,spotlight:false,spotlightShape:"circle",spotlightDarkness:0.65,spotlightSize:220,alignmentGuides:[],wipeConfirm:null,
+  inlineEditingId:null,rightClickPos:{},pendingPlace:null,editArmed:null,hoveredId:null,hoveredTextSide:null,spotlight:false,spotlightShape:"circle",spotlightDarkness:0.65,spotlightSize:220,alignmentGuides:[],wipeConfirm:null,
   lastMouse:{x:innerWidth/2,y:innerHeight/2,wx:0,wy:0},toolbarPos:"bottom",
   eraseTouched:false,eraseDidPush:false,hasMouseMoved:false,fireParticles:[],internalClipboard:null,
   whiteboards:[],currentBoardId:null,saveTimeout:null,swipe:{active:false,startY:0},_miniWorld:null,
@@ -207,7 +207,10 @@ function applyBoardRecord(cur){
   const titleEl=document.getElementById("board-title");
   const validName = (cur.name && typeof cur.name === "string" && cur.name.trim()) ? cur.name.trim() : (cur.name || "Untitled Whiteboard");
   cur.name = validName;
-  if(titleEl) titleEl.value = validName;
+  if(titleEl){
+    titleEl.value = validName;
+    adjustBoardTitleWidth(titleEl);
+  }
   state.gridSpacing=cur.gridSpacing||24;
   state.bgColor=cur.bgColor||"#ffffff";
   state.theme=cur.theme==="blueprint"?"blueprint":"classlight";
@@ -2162,6 +2165,50 @@ function drawSelection(el){
   ctx.setLineDash([7/z, 5/z]);
   ctx.strokeRect(b.x-pad,b.y-pad,b.w+pad*2,b.h+pad*2);
   ctx.setLineDash([]);
+  if(isText){
+    const isLeftActive = (state.hoveredTextSide && state.hoveredTextSide.elId === el.id && state.hoveredTextSide.side === 0) ||
+                         (state.isTransforming && state.selectedId === el.id && state.transform.mode === "side" && state.transform.handle && state.transform.handle.idx === 0);
+    const isRightActive = (state.hoveredTextSide && state.hoveredTextSide.elId === el.id && state.hoveredTextSide.side === 1) ||
+                          (state.isTransforming && state.selectedId === el.id && state.transform.mode === "side" && state.transform.handle && state.transform.handle.idx === 1);
+    const leftX = b.x - pad;
+    const rightX = b.x + b.w + pad;
+    const topY = b.y - pad;
+    const botY = b.y + b.h + pad;
+    if(isLeftActive){
+      ctx.save();
+      ctx.strokeStyle = "rgba(37, 99, 235, 0.25)";
+      ctx.lineWidth = 5 / z;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(leftX, topY);
+      ctx.lineTo(leftX, botY);
+      ctx.stroke();
+      ctx.strokeStyle = "#1d4ed8";
+      ctx.lineWidth = 2.5 / z;
+      ctx.beginPath();
+      ctx.moveTo(leftX, topY);
+      ctx.lineTo(leftX, botY);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if(isRightActive){
+      ctx.save();
+      ctx.strokeStyle = "rgba(37, 99, 235, 0.25)";
+      ctx.lineWidth = 5 / z;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(rightX, topY);
+      ctx.lineTo(rightX, botY);
+      ctx.stroke();
+      ctx.strokeStyle = "#1d4ed8";
+      ctx.lineWidth = 2.5 / z;
+      ctx.beginPath();
+      ctx.moveTo(rightX, topY);
+      ctx.lineTo(rightX, botY);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
   const corners=[
     {x:b.x-pad,y:b.y-pad},
     {x:b.x+b.w+pad,y:b.y-pad},
@@ -2581,8 +2628,8 @@ function positionToolbar(){
   if(sel && sel.type==="sticky" && state.selectedIds.length<=1) positionStickyRail(sel);
 }
 function deselect(){
-  if(state.selectedId||state.editArmed||state.selectedIds.length){
-    state.selectedId=null; state.selectedIds=[]; state.editArmed=null; hideToolbar(); render();
+  if(state.selectedId||state.editArmed||state.selectedIds.length||state.hoveredTextSide){
+    state.selectedId=null; state.selectedIds=[]; state.editArmed=null; state.hoveredTextSide=null; hideToolbar(); render();
   }
 }
 
@@ -2898,10 +2945,31 @@ function showImageImportChoiceModal(file, originX, originY){
   if(btnCancel) btnCancel.onclick = () => hideImageImportModals();
 }
 
+let currentConversionAbortController = null;
+let isConversionCancelled = false;
+
 async function startImageConversion(file, originX, originY){
   hideImageImportModals();
+  isConversionCancelled = false;
+  if(currentConversionAbortController){
+    try { currentConversionAbortController.abort(); } catch(e){}
+  }
+  currentConversionAbortController = new AbortController();
+
   const progressModal = document.getElementById("image-conversion-progress-modal");
   const progressStatus = document.getElementById("conversion-progress-status");
+  const btnCancelConversion = document.getElementById("btn-cancel-conversion");
+
+  if(btnCancelConversion){
+    btnCancelConversion.onclick = () => {
+      isConversionCancelled = true;
+      if(currentConversionAbortController){
+        try { currentConversionAbortController.abort(); } catch(e){}
+      }
+      hideImageImportModals();
+    };
+  }
+
   if(progressModal) progressModal.classList.remove("hidden");
   if(progressStatus) progressStatus.textContent = "Analyzing image with AI vision...";
   if(window.lucide && window.lucide.createIcons) window.lucide.createIcons();
@@ -2913,12 +2981,15 @@ async function startImageConversion(file, originX, originY){
     }
 
     const prepared = await importer.prepareImageForAnalysis(file);
+    if(isConversionCancelled) return;
     if(progressStatus) progressStatus.textContent = "Recognizing shapes, text & diagrams...";
 
     const aiResult = await importer.analyzeWhiteboardImage(prepared, (status) => {
+      if(isConversionCancelled) return;
       if(progressStatus) progressStatus.textContent = status;
-    });
+    }, currentConversionAbortController.signal);
 
+    if(isConversionCancelled) return;
     if(progressStatus) progressStatus.textContent = "Reconstructing whiteboard objects...";
 
     const targetCenter = (originX != null && originY != null) ? { x: originX, y: originY } : getViewportCenter();
@@ -2926,9 +2997,15 @@ async function startImageConversion(file, originX, originY){
       targetCenter,
     });
 
+    if(isConversionCancelled) return;
+
     if(progressModal) progressModal.classList.add("hidden");
     showConversionSummary(reconstructed, prepared, targetCenter, file);
   } catch(err){
+    if(isConversionCancelled || err?.name === "AbortError" || (typeof err?.message === "string" && err.message.toLowerCase().includes("abort"))){
+      hideImageImportModals();
+      return;
+    }
     console.error("Conversion failed:", err);
     if(progressModal) progressModal.classList.add("hidden");
     showConversionError(err, file, originX, originY);
@@ -4163,7 +4240,12 @@ addEventListener("pointermove",e=>{
     return;
   }
   if(state.tool==="select"&&!state.isTransforming){
+    let nextHoveredSide = null;
     if(state.selectedIds.length>1){
+      if(state.hoveredTextSide){
+        state.hoveredTextSide = null;
+        scheduleRender();
+      }
       const hh=hitHandles(null,wPos);
       if(hh){
         if(hh.mode==="rotateMulti") container.style.cursor="grab";
@@ -4176,7 +4258,37 @@ addEventListener("pointermove",e=>{
       container.style.cursor="default";
     } else if(state.selectedId){
       const sel=state.elements.find(ee=>ee.id===state.selectedId);
-      if(sel){const hh=hitHandles(sel,wPos);if(hh){if(hh.mode==="endpoint")container.style.cursor="crosshair";else if(hh.mode==="rotate")container.style.cursor="grab";else if(hh.type==="side")container.style.cursor="ew-resize";else container.style.cursor=hh.idx%2===0?"nwse-resize":"nesw-resize";return;}if(hitElement(wPos)?.id===state.selectedId){container.style.cursor="grab";return;}container.style.cursor="default";}
+      if(sel){
+        const hh=hitHandles(sel,wPos);
+        if(hh && hh.type==="side" && sel.type==="text"){
+          nextHoveredSide = { elId: sel.id, side: hh.idx };
+        }
+        const prev = state.hoveredTextSide;
+        const changed = (!prev && nextHoveredSide) || (prev && !nextHoveredSide) || (prev && nextHoveredSide && (prev.elId !== nextHoveredSide.elId || prev.side !== nextHoveredSide.side));
+        if(changed){
+          state.hoveredTextSide = nextHoveredSide;
+          scheduleRender();
+        }
+        if(hh){
+          if(hh.mode==="endpoint")container.style.cursor="crosshair";
+          else if(hh.mode==="rotate")container.style.cursor="grab";
+          else if(hh.type==="side")container.style.cursor="ew-resize";
+          else container.style.cursor=hh.idx%2===0?"nwse-resize":"nesw-resize";
+          return;
+        }
+        if(hitElement(wPos)?.id===state.selectedId){container.style.cursor="grab";return;}
+        container.style.cursor="default";
+      } else {
+        if(state.hoveredTextSide){
+          state.hoveredTextSide = null;
+          scheduleRender();
+        }
+      }
+    } else {
+      if(state.hoveredTextSide){
+        state.hoveredTextSide = null;
+        scheduleRender();
+      }
     }
   }
   if(state.isTransforming){
@@ -5802,11 +5914,47 @@ document.querySelectorAll(".teach-btn").forEach(b=>{
     updateCursor();
   };
 });
+function adjustBoardTitleWidth(inputEl){
+  if(!inputEl) return;
+  const val = inputEl.value || inputEl.placeholder || "Untitled Whiteboard";
+  inputEl.size = Math.max(12, val.length + 1);
+}
+
 const _boardTitleInput = document.getElementById("board-title");
 if(_boardTitleInput){
-  _boardTitleInput.oninput=()=>{
+  adjustBoardTitleWidth(_boardTitleInput);
+  _boardTitleInput.oninput = () => {
     state.titleUserEdited = true;
+    adjustBoardTitleWidth(_boardTitleInput);
     saveBoards();
+    renderBoardsList();
+  };
+  _boardTitleInput.onkeydown = (e) => {
+    if(e.key === "Enter" || e.code === "Enter"){
+      e.preventDefault();
+      state.titleUserEdited = true;
+      const b = currentBoardRecord();
+      const v = _boardTitleInput.value.trim();
+      if(b && v){
+        b.name = v;
+        _boardTitleInput.value = v;
+      }
+      adjustBoardTitleWidth(_boardTitleInput);
+      saveBoards(true);
+      renderBoardsList();
+      _boardTitleInput.blur();
+    }
+  };
+  _boardTitleInput.onblur = () => {
+    state.titleUserEdited = true;
+    const b = currentBoardRecord();
+    const v = _boardTitleInput.value.trim();
+    if(b && v){
+      b.name = v;
+      _boardTitleInput.value = v;
+    }
+    adjustBoardTitleWidth(_boardTitleInput);
+    saveBoards(true);
     renderBoardsList();
   };
 }

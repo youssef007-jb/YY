@@ -104,8 +104,15 @@ export async function prepareImageForAnalysis(file: File | Blob): Promise<{
  */
 export async function analyzeWhiteboardImage(
   imageInfo: { base64: string; mimeType: string; width: number; height: number },
-  onStatusUpdate?: (status: string) => void
+  onStatusUpdateOrOptions?: ((status: string) => void) | { onStatusUpdate?: (status: string) => void; signal?: AbortSignal },
+  signalOrLegacy?: AbortSignal
 ): Promise<AiConversionResult> {
+  const onStatusUpdate = typeof onStatusUpdateOrOptions === "function"
+    ? onStatusUpdateOrOptions
+    : onStatusUpdateOrOptions?.onStatusUpdate;
+  const signal = (onStatusUpdateOrOptions && typeof onStatusUpdateOrOptions === "object" && onStatusUpdateOrOptions.signal)
+    || signalOrLegacy;
+
   onStatusUpdate?.("Analyzing image with AI vision...");
 
   const response = await fetch("/api/convert-whiteboard-image", {
@@ -113,6 +120,7 @@ export async function analyzeWhiteboardImage(
     headers: {
       "Content-Type": "application/json",
     },
+    signal,
     body: JSON.stringify({
       imageBase64: imageInfo.base64,
       mimeType: imageInfo.mimeType,

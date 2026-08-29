@@ -63,11 +63,13 @@
 <button id="rc-delete" class="w-full text-left px-3 py-2 hover:bg-red-50 text-red-500 flex gap-2 items-center"><i data-lucide="trash-2" class="w-4 h-4"></i> Delete</button>
 </div>
 
-<div class="absolute top-4 left-4 z-10 bg-white/95 border rounded-full px-2.5 py-1.5 flex gap-2.5 shadow-sm items-center title-pill backdrop-blur">
+<div class="absolute top-4 left-4 z-10 bg-white/95 border rounded-full p-1.5 flex shadow-sm items-center title-pill backdrop-blur">
 <button id="home-btn" title="Back to homepage" aria-label="Back to homepage" class="flex items-center justify-center p-0 border-0 bg-transparent hover:opacity-80 active:scale-95 transition-opacity cursor-pointer shrink-0" style="border: none; box-shadow: none; padding: 0; background: transparent;">
 <img src="/app-logo.png" alt="Yow Yow" class="w-7 h-7 object-contain" style="background: transparent; border-radius: 6px; border: none; box-shadow: none; padding: 0; object-fit: contain;" />
 </button>
-<input id="board-title" value="" placeholder="Untitled Whiteboard" class="font-semibold text-sm bg-transparent outline-none w-44">
+<div class="title-pill-name-wrap flex items-center overflow-hidden">
+<input id="board-title" value="" placeholder="Untitled Whiteboard" class="font-semibold text-sm bg-transparent outline-none">
+</div>
 </div>
 
 <div id="main-toolbar-wrapper" class="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2">
@@ -394,13 +396,19 @@
     <p class="text-[11px] text-slate-500 mb-4">Reconstructing vector shapes, text, sticky notes & annotations</p>
 
     <!-- Progress step indicators -->
-    <div class="flex items-center justify-center gap-2 text-[10px] text-slate-400">
+    <div class="flex items-center justify-center gap-2 text-[10px] text-slate-400 mb-4">
       <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> Upload</span>
       <span class="text-slate-300">➔</span>
       <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-ping"></span> AI Vision</span>
       <span class="text-slate-300">➔</span>
       <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span> Reconstruct</span>
     </div>
+
+    <!-- Cancel Button -->
+    <button type="button" id="btn-cancel-conversion" class="w-full py-2 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition active:scale-98 cursor-pointer flex items-center justify-center gap-1.5">
+      <i data-lucide="x" class="w-3.5 h-3.5"></i>
+      <span>Cancel</span>
+    </button>
   </div>
 </div>
 
@@ -527,11 +535,13 @@
 </div>
 
 <div id="zoom-controls" class="absolute bottom-4 left-4 z-10 bg-white/90 border rounded-full px-1.5 py-1 flex items-center gap-1 shadow-sm">
-<button type="button" id="zoom-out" class="w-7 h-7 rounded-full hover:bg-slate-100 text-sm font-semibold">−</button>
-<span id="zoom-label" class="text-[11px] w-10 text-center tabular-nums text-slate-600">100%</span>
-<button type="button" id="zoom-in" class="w-7 h-7 rounded-full hover:bg-slate-100 text-sm font-semibold">+</button>
-<span class="w-px h-4 bg-slate-200"></span>
-<button type="button" id="zoom-fit" title="Fit to screen" class="h-7 px-2 rounded-full hover:bg-slate-100 text-[11px] font-semibold flex items-center gap-1"><i data-lucide="maximize" class="w-3.5 h-3.5"></i>Fit</button>
-<button type="button" id="zoom-reset" title="Reset to 100%" class="h-7 px-2 rounded-full hover:bg-slate-100 text-[11px] font-semibold">100%</button>
+<button type="button" id="zoom-out" class="w-7 h-7 rounded-full hover:bg-slate-100 text-sm font-semibold shrink-0">−</button>
+<span id="zoom-label" class="text-[11px] w-10 text-center tabular-nums text-slate-600 shrink-0">100%</span>
+<button type="button" id="zoom-in" class="w-7 h-7 rounded-full hover:bg-slate-100 text-sm font-semibold shrink-0">+</button>
+<div id="zoom-extra-controls" class="zoom-extra-controls flex items-center gap-1 overflow-hidden">
+<span class="w-px h-4 bg-slate-200 shrink-0"></span>
+<button type="button" id="zoom-fit" title="Fit to screen" class="h-7 px-2 rounded-full hover:bg-slate-100 text-[11px] font-semibold flex items-center gap-1 shrink-0"><i data-lucide="maximize" class="w-3.5 h-3.5"></i>Fit</button>
+<button type="button" id="zoom-reset" title="Reset to 100%" class="h-7 px-2 rounded-full hover:bg-slate-100 text-[11px] font-semibold shrink-0">100%</button>
+</div>
 </div>
 

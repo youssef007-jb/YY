@@ -117,14 +117,13 @@ export interface ConversionResponse {
 
 // Candidate Gemini models in order of capability, quality, and availability
 const GEMINI_MODELS = [
-  "gemini-2.5-flash",
-  "gemini-2.5-flash-lite",
-  "gemini-1.5-flash",
+  "gemini-3.7-flash",
+  "gemini-3.1-flash-lite",
 ];
 
 const CANDIDATE_MODELS = [
-  "google/gemini-2.5-flash",
-  "google/gemini-2.5-flash-lite",
+  "google/gemini-3.7-flash",
+  "google/gemini-3.1-flash-lite",
 ];
 
 function cleanErrorMessage(rawError: unknown): string {
@@ -221,7 +220,14 @@ Output STRICT JSON in this exact structure:
   let responseText: string | null = null;
 
   if (auth.type === "gemini") {
-    const ai = new GoogleGenAI({ apiKey: auth.key });
+    const ai = new GoogleGenAI({
+      apiKey: auth.key,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
     for (const modelName of GEMINI_MODELS) {
       try {
         const resp = await ai.models.generateContent({
