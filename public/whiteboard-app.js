@@ -1057,9 +1057,36 @@ const _textMeasure=document.createElement("div");
 _textMeasure.setAttribute("aria-hidden","true");
 _textMeasure.style.cssText="position:absolute;left:-9999px;top:0;white-space:pre;visibility:hidden;pointer-events:none;line-height:1.25;padding:0;margin:0;border:0;";
 document.body.appendChild(_textMeasure);
+function isManualWidthText(el){
+  return !!(el && el.type==="text" && el.widthMode==="manual" && typeof el.boxWidth==="number" && el.boxWidth>0);
+}
+function textLines(el){
+  const raw = el.isPlaceholder ? "Type here" : String(el.text||"");
+  if(!isManualWidthText(el)) return raw.split("\n");
+  const maxW = Math.max(8, el.boxWidth);
+  ctx.save(); ctx.font=textFont(el);
+  const out=[];
+  raw.split("\n").forEach(par=>{
+    if(!par){out.push("");return}
+    let line="";
+    par.split(/(\s+)/).forEach(tok=>{
+      const test=line+tok;
+      if(ctx.measureText(test).width>maxW && line.trim()){ out.push(line.replace(/\s+$/,"")); line=tok.replace(/^\s+/,""); }
+      else line=test;
+    });
+    out.push(line);
+  });
+  ctx.restore();
+  return out.length?out:[""];
+}
 function fitTextElement(el){
   if(!el || el.type!=="text") return;
   const size=el.size||18;
+  if(isManualWidthText(el)){
+    el.w = Math.max(8, el.boxWidth);
+    el.h = Math.max(size*1.25, textLines(el).length*size*1.25);
+    return;
+  }
   const text=String(el.text||"");
   _textMeasure.style.font=textFont(el);
   _textMeasure.style.lineHeight="1.25";
@@ -1069,6 +1096,7 @@ function fitTextElement(el){
   el.w = Math.max(8, _textMeasure.offsetWidth + caret);
   el.h = Math.max(size * 1.25, _textMeasure.offsetHeight);
 }
+
 function stickyFont(el){return `${el.italic?"italic ":""}${el.bold?"bold ":""}${el.size||16}px ${el.font||"Segoe UI,Inter,system-ui,sans-serif"}`}
 const STICKY_PAD=10;
 function stickyLines(el){
