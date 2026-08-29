@@ -1,24 +1,13 @@
-import { GoogleGenAI } from "@google/genai";
+const AI_GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 
-let genAiClient: GoogleGenAI | null = null;
-
-function getGemini(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY;
+function getAiKey(): string {
+  const apiKey = process.env["LOVABLE_API_KEY"];
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY environment variable is not configured. Please set your Gemini API key.");
+    throw new Error("AI service is not configured for this project.");
   }
-  if (!genAiClient) {
-    genAiClient = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        },
-      },
-    });
-  }
-  return genAiClient;
+  return apiKey;
 }
+
 
 export interface ConvertImageRequest {
   imageBase64: string;
