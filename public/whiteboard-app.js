@@ -807,18 +807,42 @@ function applyBgColor(c){
   saveBoards();
 }
 function resizeCanvas(){
-  const dpr=window.devicePixelRatio||1;
-  canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr;
-  canvas.style.width=innerWidth+"px"; canvas.style.height=innerHeight+"px";
+  const dpr=Math.max(1, window.devicePixelRatio||1);
+  const w=innerWidth, h=innerHeight;
+  canvas.width=Math.round(w*dpr); canvas.height=Math.round(h*dpr);
+  canvas.style.width=w+"px"; canvas.style.height=h+"px";
   ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.imageSmoothingEnabled=true;
+  ctx.imageSmoothingQuality="high";
   if(overlayCanvas && overlayCtx){
-    overlayCanvas.width=innerWidth*dpr; overlayCanvas.height=innerHeight*dpr;
-    overlayCanvas.style.width=innerWidth+"px"; overlayCanvas.style.height=innerHeight+"px";
+    overlayCanvas.width=Math.round(w*dpr); overlayCanvas.height=Math.round(h*dpr);
+    overlayCanvas.style.width=w+"px"; overlayCanvas.style.height=h+"px";
     overlayCtx.setTransform(dpr,0,0,dpr,0,0);
+    overlayCtx.imageSmoothingEnabled=true;
+    overlayCtx.imageSmoothingQuality="high";
   }
   render();
 }
 addEventListener("resize",resizeCanvas,__hbSig);
+
+let _dprQuery=null;
+function setupDprListener(){
+  try{
+    if(_dprQuery && _dprQuery.removeEventListener) _dprQuery.removeEventListener("change", onDprChange);
+  }catch(e){}
+  const dpr=window.devicePixelRatio||1;
+  try{
+    _dprQuery=window.matchMedia(`(resolution: ${dpr}dppx)`);
+    if(_dprQuery && _dprQuery.addEventListener){
+      _dprQuery.addEventListener("change", onDprChange, { once: true });
+    }
+  }catch(e){}
+}
+function onDprChange(){
+  resizeCanvas();
+  setupDprListener();
+}
+setupDprListener();
 function toWorld(x,y){return{x:(x-state.camera.x)/state.camera.zoom,y:(y-state.camera.y)/state.camera.zoom}}
 function toScreen(x,y){return{x:x*state.camera.zoom+state.camera.x,y:y*state.camera.zoom+state.camera.y}}
 function getViewportCenter(){return toWorld(innerWidth/2,innerHeight/2)}
@@ -1941,6 +1965,8 @@ function drawElement(el, targetCtx=ctx){
   else if(el.type==="text"){if(state.inlineEditingId===el.id){c.restore();return;}c.fillStyle=el.isPlaceholder?"#9ca3af":(el.color||DEFAULT_TEXT_COLOR);c.font=textFont(el);c.textBaseline="top";const lines=textLines(el);lines.forEach((l,i)=>{const yy=el.y+i*((el.size||18)*1.25);c.fillText(l,el.x,yy);if(el.underline){c.fillRect(el.x,yy+(el.size||18)+2,c.measureText(l).width,1);}})}
   else if(el.type==="image"){
     if(el.img&&el.img.complete&&el.img.naturalWidth>0){
+      c.imageSmoothingEnabled=true;
+      c.imageSmoothingQuality="high";
       c.drawImage(el.img,el.x,el.y,el.w,el.h);
     } else if(el.src){
       ensureImageLoaded(el);
@@ -1971,6 +1997,38 @@ function scheduleRender(){
   });
 }
 
+function getVisibleWorldViewport(padding=120){
+  const z=Math.max(0.01, state.camera.zoom);
+  const pad=padding/z;
+  return {
+    minX: -state.camera.x/z - pad,
+    minY: -state.camera.y/z - pad,
+    maxX: (innerWidth - state.camera.x)/z + pad,
+    maxY: (innerHeight - state.camera.y)/z + pad
+  };
+}
+
+function isElementInViewport(el, vp){
+  if(!vp || (el.type==="timer" && el.pinned)) return true;
+  const b=getBounds(el);
+  if(el.rotation){
+    const diag=Math.sqrt(b.w*b.w + b.h*b.h);
+    const cx=b.x+b.w/2, cy=b.y+b.h/2;
+    return (
+      cx + diag/2 >= vp.minX &&
+      cx - diag/2 <= vp.maxX &&
+      cy + diag/2 >= vp.minY &&
+      cy - diag/2 <= vp.maxY
+    );
+  }
+  return (
+    b.x + b.w >= vp.minX &&
+    b.x <= vp.maxX &&
+    b.y + b.h >= vp.minY &&
+    b.y <= vp.maxY
+  );
+}
+
 function renderOverlay(){
   if(!overlayCtx) return;
   overlayCtx.clearRect(0,0,innerWidth,innerHeight);
@@ -1978,9 +2036,11 @@ function renderOverlay(){
   overlayCtx.translate(state.camera.x,state.camera.y);
   overlayCtx.scale(state.camera.zoom,state.camera.zoom);
 
+  const vp = state.elements.length > 25 ? getVisibleWorldViewport(120) : null;
+
   // 1. Vanishing / laser pointer strokes
   state.elements.forEach(el=>{
-    if(el.type==="vanishing") drawElement(el, overlayCtx);
+    if(el.type==="vanishing" && (!vp || isElementInViewport(el, vp))) drawElement(el, overlayCtx);
   });
   if(state.currentElement && state.currentElement.type==="vanishing"){
     drawElement(state.currentElement, overlayCtx);
@@ -2017,8 +2077,10 @@ function render(){
     }
   });
   ctx.save();ctx.translate(state.camera.x,state.camera.y);ctx.scale(state.camera.zoom,state.camera.zoom);
+  const vp = state.elements.length > 25 ? getVisibleWorldViewport(120) : null;
   state.elements.forEach(el=>{
     if(overlayCtx && el.type==="vanishing") return;
+    if(vp && !isElementInViewport(el, vp)) return;
     drawElement(el, ctx);
   });
   if(state.currentElement && (!overlayCtx || state.currentElement.type!=="vanishing")) drawElement(state.currentElement, ctx);
