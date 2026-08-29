@@ -2235,49 +2235,47 @@ function drawSelection(el){
   ctx.setLineDash([7/z, 5/z]);
   ctx.strokeRect(b.x-pad,b.y-pad,b.w+pad*2,b.h+pad*2);
   ctx.setLineDash([]);
-  if(isText){
-    const isLeftActive = (state.hoveredTextSide && state.hoveredTextSide.elId === el.id && state.hoveredTextSide.side === 0) ||
-                         (state.isTransforming && state.selectedId === el.id && state.transform.mode === "side" && state.transform.handle && state.transform.handle.idx === 0);
-    const isRightActive = (state.hoveredTextSide && state.hoveredTextSide.elId === el.id && state.hoveredTextSide.side === 1) ||
-                          (state.isTransforming && state.selectedId === el.id && state.transform.mode === "side" && state.transform.handle && state.transform.handle.idx === 1);
-    const leftX = b.x - pad;
-    const rightX = b.x + b.w + pad;
-    const topY = b.y - pad;
-    const botY = b.y + b.h + pad;
-    if(isLeftActive){
-      ctx.save();
-      ctx.strokeStyle = "rgba(37, 99, 235, 0.25)";
-      ctx.lineWidth = 5 / z;
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.moveTo(leftX, topY);
-      ctx.lineTo(leftX, botY);
-      ctx.stroke();
-      ctx.strokeStyle = "#1d4ed8";
-      ctx.lineWidth = 2.5 / z;
-      ctx.beginPath();
-      ctx.moveTo(leftX, topY);
-      ctx.lineTo(leftX, botY);
-      ctx.stroke();
-      ctx.restore();
-    }
-    if(isRightActive){
-      ctx.save();
-      ctx.strokeStyle = "rgba(37, 99, 235, 0.25)";
-      ctx.lineWidth = 5 / z;
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.moveTo(rightX, topY);
-      ctx.lineTo(rightX, botY);
-      ctx.stroke();
-      ctx.strokeStyle = "#1d4ed8";
-      ctx.lineWidth = 2.5 / z;
-      ctx.beginPath();
-      ctx.moveTo(rightX, topY);
-      ctx.lineTo(rightX, botY);
-      ctx.stroke();
-      ctx.restore();
-    }
+  const isLeftActive = (state.hoveredTextSide && state.hoveredTextSide.elId === el.id && state.hoveredTextSide.side === 0) ||
+                       (state.isTransforming && state.selectedId === el.id && state.transform.mode === "side" && state.transform.handle && state.transform.handle.idx === 0);
+  const isRightActive = (state.hoveredTextSide && state.hoveredTextSide.elId === el.id && state.hoveredTextSide.side === 1) ||
+                        (state.isTransforming && state.selectedId === el.id && state.transform.mode === "side" && state.transform.handle && state.transform.handle.idx === 1);
+  const leftX = b.x - pad;
+  const rightX = b.x + b.w + pad;
+  const topY = b.y - pad;
+  const botY = b.y + b.h + pad;
+  if(isLeftActive){
+    ctx.save();
+    ctx.strokeStyle = "rgba(37, 99, 235, 0.25)";
+    ctx.lineWidth = 5 / z;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(leftX, topY);
+    ctx.lineTo(leftX, botY);
+    ctx.stroke();
+    ctx.strokeStyle = "#1d4ed8";
+    ctx.lineWidth = 2.5 / z;
+    ctx.beginPath();
+    ctx.moveTo(leftX, topY);
+    ctx.lineTo(leftX, botY);
+    ctx.stroke();
+    ctx.restore();
+  }
+  if(isRightActive){
+    ctx.save();
+    ctx.strokeStyle = "rgba(37, 99, 235, 0.25)";
+    ctx.lineWidth = 5 / z;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(rightX, topY);
+    ctx.lineTo(rightX, botY);
+    ctx.stroke();
+    ctx.strokeStyle = "#1d4ed8";
+    ctx.lineWidth = 2.5 / z;
+    ctx.beginPath();
+    ctx.moveTo(rightX, topY);
+    ctx.lineTo(rightX, botY);
+    ctx.stroke();
+    ctx.restore();
   }
   const corners=[
     {x:b.x-pad,y:b.y-pad},
@@ -2294,7 +2292,6 @@ function drawSelection(el){
                       (state.isTransforming && state.selectedId === el.id && state.transform.mode === "resize" && state.transform.handle && state.transform.handle.idx === i);
     handle(h.x,h.y,isHovered);
   });
-  if(!isText) sides.forEach(h=>handle(h.x,h.y,false));
   const rhX=b.x+b.w/2,rhY=b.y+b.h+pad+20/z;
   ctx.strokeStyle="#2563eb"; ctx.lineWidth=1.25/z;
   ctx.beginPath();ctx.moveTo(rhX,b.y+b.h+pad+2/z);ctx.lineTo(rhX,rhY-hs-1/z);ctx.stroke();
@@ -2302,7 +2299,7 @@ function drawSelection(el){
                        (state.isTransforming && state.selectedId === el.id && state.transform.mode === "rotate");
   handle(rhX,rhY,isRotHovered);
   ctx.restore();
-  el._handles={corners,sides:isText?[]:sides,rot:{x:rhX,y:rhY},center:{x:cx,y:cy}};
+  el._handles={corners,sides,rot:{x:rhX,y:rhY},center:{x:cx,y:cy}};
 }
 function hitHandles(el,wp){
   const z = Math.max(0.05, state.camera.zoom);
@@ -2356,26 +2353,16 @@ function hitHandles(el,wp){
   for(let i = 0; i < corners.length; i++){
     if(Math.hypot(localWp.x - corners[i].x, localWp.y - corners[i].y) < tol) return { mode: "resize", idx: i, type: "corner" };
   }
-  if(isText){
-    const leftX = b.x - pad;
-    const rightX = b.x + b.w + pad;
-    const topY = b.y - pad;
-    const botY = b.y + b.h + pad;
-    const sideTol = Math.max(tol, 10 / z);
-    if(distToSegment(localWp.x, localWp.y, leftX, topY, leftX, botY) <= sideTol){
-      return { mode: "side", idx: 0, type: "side" };
-    }
-    if(distToSegment(localWp.x, localWp.y, rightX, topY, rightX, botY) <= sideTol){
-      return { mode: "side", idx: 1, type: "side" };
-    }
-    return null;
+  const leftX = b.x - pad;
+  const rightX = b.x + b.w + pad;
+  const topY = b.y - pad;
+  const botY = b.y + b.h + pad;
+  const sideTol = Math.max(tol, 10 / z);
+  if(distToSegment(localWp.x, localWp.y, leftX, topY, leftX, botY) <= sideTol){
+    return { mode: "side", idx: 0, type: "side" };
   }
-  const sides = [
-    { x: b.x - pad, y: b.y + b.h / 2 },
-    { x: b.x + b.w + pad, y: b.y + b.h / 2 }
-  ];
-  for(let i = 0; i < sides.length; i++){
-    if(Math.hypot(localWp.x - sides[i].x, localWp.y - sides[i].y) < tol) return { mode: "side", idx: i, type: "side" };
+  if(distToSegment(localWp.x, localWp.y, rightX, topY, rightX, botY) <= sideTol){
+    return { mode: "side", idx: 1, type: "side" };
   }
   return null;
 }
@@ -4352,7 +4339,7 @@ addEventListener("pointermove",e=>{
       const sel=state.elements.find(ee=>ee.id===state.selectedId);
       if(sel){
         const hh=hitHandles(sel,wPos);
-        if(hh && hh.type==="side" && sel.type==="text"){
+        if(hh && hh.type==="side"){
           nextHoveredSide = { elId: sel.id, side: hh.idx };
         }
         if(hh && hh.type==="corner"){
@@ -4598,18 +4585,39 @@ addEventListener("pointermove",e=>{
           nx = sb.x;
           nw = Math.max(localPos.x, sb.x + MIN_W) - sb.x;
         }
-        if(el.type==="sticky"){
+      }
+
+      nw = Math.max(MIN_W, nw);
+      nh = isSide ? sb.h : Math.max(MIN_H, nh);
+
+      if(isSide && el.rotation && el.type!=="text"){
+        const c0 = { x: sb.x + sb.w/2, y: sb.y + sb.h/2 };
+        const pLocal = (idx === 0) ? { x: sb.x + sb.w, y: sb.y + sb.h/2 } : { x: sb.x, y: sb.y + sb.h/2 };
+        const pWorld = rotatePoint(pLocal.x, pLocal.y, c0.x, c0.y, el.rotation);
+        const newX = (idx === 0) ? (sb.x + sb.w - nw) : sb.x;
+        const newY = sb.y;
+        const newW = nw, newH = sb.h;
+        const newLocalCenter = { x: newX + newW/2, y: newY + newH/2 };
+        const newLocalFixed = (idx === 0) ? { x: newX + newW, y: newY + newH/2 } : { x: newX, y: newY + newH/2 };
+        const dx = newLocalFixed.x - newLocalCenter.x;
+        const dy = newLocalFixed.y - newLocalCenter.y;
+        const rotOffset = rotatePoint(dx, dy, 0, 0, el.rotation);
+        nx = pWorld.x - rotOffset.x - newW/2;
+        ny = pWorld.y - rotOffset.y - newH/2;
+      }
+
+      if(el.type==="sticky"){
+        if(isSide){
           el.w = Math.max(80, nw);
+          el.h = sb.h;
           el.x = nx;
+          el.y = ny;
           render();
           positionToolbar();
           if(inlineBox) updateInlineEditorTransform();
           return;
         }
       }
-
-      nw = Math.max(MIN_W, nw);
-      nh = Math.max(MIN_H, nh);
 
       if(el.type==="text"){
         if(isSide){
@@ -4660,7 +4668,7 @@ addEventListener("pointermove",e=>{
           const sx=nw/sb.w, sy=isSide?1:nh/sb.h;
           el.points=state.transform.startEl.points.map(p=>({x:nx+(p.x-sb.x)*sx,y:ny+(p.y-sb.y)*sy}));
         } else {
-          el.x=nx; el.y=ny; el.w=Math.abs(nw); el.h=Math.abs(nh);
+          el.x=nx; el.y=ny; el.w=Math.abs(nw); el.h=isSide?sb.h:Math.abs(nh);
           if((el.type==="text"||el.type==="sticky")&&!isSide){
             const scale=(nw/sb.w+nh/sb.h)/2;
             el.size=Math.max(10,(state.transform.startEl.size||(el.type==="sticky"?16:18))*scale);
