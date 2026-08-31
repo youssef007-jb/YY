@@ -2184,56 +2184,90 @@ window.__hbiboInit = function (opts) {
     c.save();
     state.alignmentGuides.forEach((g) => {
       if (g.type === "equal_spacing") {
-        c.strokeStyle = "#3b82f6";
-        c.fillStyle = "#3b82f6";
+        const tickSize = 5 / z;
+        c.strokeStyle = "#2563eb";
+        c.fillStyle = "#2563eb";
         c.lineWidth = 1.25 / z;
         c.setLineDash([]);
-        const tickSize = 4 / z;
-        if (g.axis === "x") {
-          (g.ranges || []).forEach((r) => {
+        (g.ranges || []).forEach((r) => {
+          if (g.axis === "x") {
             if (r.x2 <= r.x1) return;
+            const y = r.y != null ? r.y : g.y;
             c.beginPath();
-            c.moveTo(r.x1, g.y);
-            c.lineTo(r.x2, g.y);
-            c.moveTo(r.x1, g.y - tickSize);
-            c.lineTo(r.x1, g.y + tickSize);
-            c.moveTo(r.x2, g.y - tickSize);
-            c.lineTo(r.x2, g.y + tickSize);
+            c.moveTo(r.x1, y);
+            c.lineTo(r.x2, y);
+            c.moveTo(r.x1, y - tickSize);
+            c.lineTo(r.x1, y + tickSize);
+            c.moveTo(r.x2, y - tickSize);
+            c.lineTo(r.x2, y + tickSize);
             c.stroke();
 
-            // Centered indicator dot
             const mx = (r.x1 + r.x2) / 2;
-            c.beginPath();
-            c.arc(mx, g.y, 2.5 / z, 0, Math.PI * 2);
+            const label = `${Math.round(r.gap)} px`;
+            c.font = `bold ${Math.max(9, Math.round(11 / z))}px Segoe UI, -apple-system, sans-serif`;
+            const tw = c.measureText(label).width;
+            const pw = tw + 8 / z;
+            const ph = 15 / z;
+            c.fillStyle = "rgba(37, 99, 235, 0.95)";
+            roundRectPath(mx - pw / 2, y - ph / 2, pw, ph, 3 / z, c);
             c.fill();
-          });
-        } else {
-          (g.ranges || []).forEach((r) => {
+            c.fillStyle = "#ffffff";
+            c.textAlign = "center";
+            c.textBaseline = "middle";
+            c.fillText(label, mx, y);
+          } else {
             if (r.y2 <= r.y1) return;
+            const x = r.x != null ? r.x : g.x;
             c.beginPath();
-            c.moveTo(g.x, r.y1);
-            c.lineTo(g.x, r.y2);
-            c.moveTo(g.x - tickSize, r.y1);
-            c.lineTo(g.x + tickSize, r.y1);
-            c.moveTo(g.x - tickSize, r.y2);
-            c.lineTo(g.x + tickSize, r.y2);
+            c.moveTo(x, r.y1);
+            c.lineTo(x, r.y2);
+            c.moveTo(x - tickSize, r.y1);
+            c.lineTo(x + tickSize, r.y1);
+            c.moveTo(x - tickSize, r.y2);
+            c.lineTo(x + tickSize, r.y2);
             c.stroke();
 
-            // Centered indicator dot
             const my = (r.y1 + r.y2) / 2;
-            c.beginPath();
-            c.arc(g.x, my, 2.5 / z, 0, Math.PI * 2);
+            const label = `${Math.round(r.gap)} px`;
+            c.font = `bold ${Math.max(9, Math.round(11 / z))}px Segoe UI, -apple-system, sans-serif`;
+            const tw = c.measureText(label).width;
+            const pw = tw + 8 / z;
+            const ph = 15 / z;
+            c.fillStyle = "rgba(37, 99, 235, 0.95)";
+            roundRectPath(x - pw / 2, my - ph / 2, pw, ph, 3 / z, c);
             c.fill();
-          });
-        }
+            c.fillStyle = "#ffffff";
+            c.textAlign = "center";
+            c.textBaseline = "middle";
+            c.fillText(label, x, my);
+          }
+        });
       } else {
-        c.strokeStyle = "#3b82f6";
+        c.strokeStyle = "#2563eb";
         c.lineWidth = 1.25 / z;
-        c.setLineDash([4 / z, 4 / z]);
+        c.setLineDash([5 / z, 4 / z]);
         c.beginPath();
         c.moveTo(g.x1, g.y1);
         c.lineTo(g.x2, g.y2);
         c.stroke();
+        c.setLineDash([]);
+
+        const cap = 4 / z;
+        if (Math.abs(g.x1 - g.x2) < 0.01) {
+          c.beginPath();
+          c.moveTo(g.x1 - cap, g.y1);
+          c.lineTo(g.x1 + cap, g.y1);
+          c.moveTo(g.x2 - cap, g.y2);
+          c.lineTo(g.x2 + cap, g.y2);
+          c.stroke();
+        } else {
+          c.beginPath();
+          c.moveTo(g.x1, g.y1 - cap);
+          c.lineTo(g.x1, g.y1 + cap);
+          c.moveTo(g.x2, g.y2 - cap);
+          c.lineTo(g.x2, g.y2 + cap);
+          c.stroke();
+        }
       }
     });
     c.restore();
@@ -2311,7 +2345,9 @@ window.__hbiboInit = function (opts) {
     const testY = startBounds.y + dy;
     const testW = startBounds.w;
     const testH = startBounds.h;
-    const SNAP_DIST = 6 / Math.max(0.05, state.camera.zoom);
+    const z = Math.max(0.05, state.camera.zoom);
+    const SNAP_DIST = 6 / z;
+    const pad = 16 / z;
 
     let bestSnapX = null,
       bestDistX = SNAP_DIST;
@@ -2335,195 +2371,266 @@ window.__hbiboInit = function (opts) {
       if (excludeIds.includes(other.id) || other.locked) continue;
       const ob = getBounds(other);
       if (ob.w > 0 && ob.h > 0) {
-        otherBoxes.push(ob);
+        if (other.rotation) {
+          const cx = ob.x + ob.w * 0.5;
+          const cy = ob.y + ob.h * 0.5;
+          const rad = (other.rotation * Math.PI) / 180;
+          const cos = Math.abs(Math.cos(rad));
+          const sin = Math.abs(Math.sin(rad));
+          const hw = ob.w * 0.5;
+          const hh = ob.h * 0.5;
+          const newHw = hw * cos + hh * sin;
+          const newHh = hw * sin + hh * cos;
+          otherBoxes.push({
+            id: other.id,
+            x: cx - newHw,
+            y: cy - newHh,
+            w: newHw * 2,
+            h: newHh * 2,
+            cx,
+            cy,
+          });
+        } else {
+          otherBoxes.push({
+            id: other.id,
+            x: ob.x,
+            y: ob.y,
+            w: ob.w,
+            h: ob.h,
+            cx: ob.x + ob.w / 2,
+            cy: ob.y + ob.h / 2,
+          });
+        }
       }
     }
 
+    // 1. Single & Multi-item Smart Alignment Snapping
     for (let i = 0; i < otherBoxes.length; i++) {
       const ob = otherBoxes[i];
       const oLeft = ob.x,
         oRight = ob.x + ob.w,
-        oCenterX = ob.x + ob.w / 2;
+        oCenterX = ob.cx;
       const oTop = ob.y,
         oBottom = ob.y + ob.h,
-        oCenterY = ob.y + ob.h / 2;
+        oCenterY = ob.cy;
 
-      const xPairs = [
-        { cur: curLeft, target: oLeft, offset: 0 },
-        { cur: curRight, target: oRight, offset: testW },
-        { cur: curCenterX, target: oCenterX, offset: testW / 2 },
-        { cur: curLeft, target: oRight, offset: 0 },
-        { cur: curRight, target: oLeft, offset: testW },
+      const xCandidates = [
+        { cur: curLeft, targetLine: oLeft, snapTarget: oLeft },
+        { cur: curRight, targetLine: oRight, snapTarget: oRight - testW },
+        { cur: curCenterX, targetLine: oCenterX, snapTarget: oCenterX - testW / 2 },
+        { cur: curLeft, targetLine: oRight, snapTarget: oRight },
+        { cur: curRight, targetLine: oLeft, snapTarget: oLeft - testW },
+        { cur: curCenterX, targetLine: oLeft, snapTarget: oLeft - testW / 2 },
+        { cur: curCenterX, targetLine: oRight, snapTarget: oRight - testW / 2 },
+        { cur: curLeft, targetLine: oCenterX, snapTarget: oCenterX },
+        { cur: curRight, targetLine: oCenterX, snapTarget: oCenterX - testW },
       ];
-      for (let j = 0; j < xPairs.length; j++) {
-        const p = xPairs[j];
-        const diff = Math.abs(p.cur - p.target);
+
+      for (let j = 0; j < xCandidates.length; j++) {
+        const c = xCandidates[j];
+        const diff = Math.abs(c.cur - c.targetLine);
         if (diff < bestDistX) {
           bestDistX = diff;
-          bestSnapX = p.target - p.offset;
+          bestSnapX = c.snapTarget;
+
+          // Find all stationary boxes participating in this vertical alignment line
+          const aligned = otherBoxes.filter((b) => {
+            return (
+              Math.abs(b.x - c.targetLine) < 1.5 ||
+              Math.abs(b.x + b.w - c.targetLine) < 1.5 ||
+              Math.abs(b.cx - c.targetLine) < 1.5
+            );
+          });
+          const allY = [
+            testY,
+            testY + testH,
+            ...aligned.map((b) => b.y),
+            ...aligned.map((b) => b.y + b.h),
+          ];
+          const minY = Math.min(...allY) - pad;
+          const maxY = Math.max(...allY) + pad;
           guideX = {
-            x1: p.target,
-            y1: Math.min(testY, ob.y) - 24,
-            x2: p.target,
-            y2: Math.max(testY + testH, ob.y + ob.h) + 24,
+            type: "align",
+            axis: "x",
+            x1: c.targetLine,
+            y1: minY,
+            x2: c.targetLine,
+            y2: maxY,
           };
         }
       }
 
-      const yPairs = [
-        { cur: curTop, target: oTop, offset: 0 },
-        { cur: curBottom, target: oBottom, offset: testH },
-        { cur: curCenterY, target: oCenterY, offset: testH / 2 },
-        { cur: curTop, target: oBottom, offset: 0 },
-        { cur: curBottom, target: oTop, offset: testH },
+      const yCandidates = [
+        { cur: curTop, targetLine: oTop, snapTarget: oTop },
+        { cur: curBottom, targetLine: oBottom, snapTarget: oBottom - testH },
+        { cur: curCenterY, targetLine: oCenterY, snapTarget: oCenterY - testH / 2 },
+        { cur: curTop, targetLine: oBottom, snapTarget: oBottom },
+        { cur: curBottom, targetLine: oTop, snapTarget: oTop - testH },
+        { cur: curCenterY, targetLine: oTop, snapTarget: oTop - testH / 2 },
+        { cur: curCenterY, targetLine: oBottom, snapTarget: oBottom - testH / 2 },
+        { cur: curTop, targetLine: oCenterY, snapTarget: oCenterY },
+        { cur: curBottom, targetLine: oCenterY, snapTarget: oCenterY - testH },
       ];
-      for (let j = 0; j < yPairs.length; j++) {
-        const p = yPairs[j];
-        const diff = Math.abs(p.cur - p.target);
+
+      for (let j = 0; j < yCandidates.length; j++) {
+        const c = yCandidates[j];
+        const diff = Math.abs(c.cur - c.targetLine);
         if (diff < bestDistY) {
           bestDistY = diff;
-          bestSnapY = p.target - p.offset;
+          bestSnapY = c.snapTarget;
+
+          // Find all stationary boxes participating in this horizontal alignment line
+          const aligned = otherBoxes.filter((b) => {
+            return (
+              Math.abs(b.y - c.targetLine) < 1.5 ||
+              Math.abs(b.y + b.h - c.targetLine) < 1.5 ||
+              Math.abs(b.cy - c.targetLine) < 1.5
+            );
+          });
+          const allX = [
+            testX,
+            testX + testW,
+            ...aligned.map((b) => b.x),
+            ...aligned.map((b) => b.x + b.w),
+          ];
+          const minX = Math.min(...allX) - pad;
+          const maxX = Math.max(...allX) + pad;
           guideY = {
-            x1: Math.min(testX, ob.x) - 24,
-            y1: p.target,
-            x2: Math.max(testX + testW, ob.x + ob.w) + 24,
-            y2: p.target,
+            type: "align",
+            axis: "y",
+            x1: minX,
+            y1: c.targetLine,
+            x2: maxX,
+            y2: c.targetLine,
           };
         }
       }
     }
 
-    // Equal Spacing Assistance for 3+ objects (Horizontal)
+    // 2. Smart Equal Spacing Assistance
     if (otherBoxes.length >= 2) {
+      // Horizontal Equal Spacing
       const sortedX = otherBoxes.slice().sort((a, b) => a.x - b.x);
       for (let i = 0; i < sortedX.length - 1; i++) {
         const A = sortedX[i];
         const B = sortedX[i + 1];
         const gapAB = B.x - (A.x + A.w);
         if (gapAB > 4) {
-          // Position between A and B
-          const targetX_mid = A.x + A.w + (gapAB - testW) / 2;
-          const diff_mid = Math.abs(testX - targetX_mid);
-          if (diff_mid < bestDistX && gapAB > testW) {
-            bestDistX = diff_mid;
-            bestSnapX = targetX_mid;
-            guideX = null;
-            const actualGap = (gapAB - testW) / 2;
-            const midY =
-              (Math.min(testY, A.y, B.y) + Math.max(testY + testH, A.y + A.h, B.y + B.h)) / 2;
-            spacingGuideX = {
-              type: "equal_spacing",
-              axis: "x",
-              y: midY,
-              ranges: [
-                { x1: A.x + A.w, x2: targetX_mid, gap: actualGap },
-                { x1: targetX_mid + testW, x2: B.x, gap: actualGap },
-              ],
-            };
+          // Case 1: Dragging M in between A and B
+          if (gapAB > testW + 4) {
+            const targetGap = (gapAB - testW) / 2;
+            const targetX_mid = A.x + A.w + targetGap;
+            const diff_mid = Math.abs(testX - targetX_mid);
+            if (diff_mid < bestDistX) {
+              bestDistX = diff_mid;
+              bestSnapX = targetX_mid;
+              guideX = null;
+              const midY = (A.cy + B.cy + curCenterY) / 3;
+              spacingGuideX = {
+                type: "equal_spacing",
+                axis: "x",
+                ranges: [
+                  { x1: A.x + A.w, x2: targetX_mid, y: midY, gap: targetGap },
+                  { x1: targetX_mid + testW, x2: B.x, y: midY, gap: targetGap },
+                ],
+              };
+            }
           }
-          // Position after B (matching gapAB)
+
+          // Case 2: Dragging M after B (matching gapAB)
           const targetX_after = B.x + B.w + gapAB;
           const diff_after = Math.abs(testX - targetX_after);
           if (diff_after < bestDistX) {
             bestDistX = diff_after;
             bestSnapX = targetX_after;
             guideX = null;
-            const midY =
-              (Math.min(testY, A.y, B.y) + Math.max(testY + testH, A.y + A.h, B.y + B.h)) / 2;
             spacingGuideX = {
               type: "equal_spacing",
               axis: "x",
-              y: midY,
               ranges: [
-                { x1: A.x + A.w, x2: B.x, gap: gapAB },
-                { x1: B.x + B.w, x2: targetX_after, gap: gapAB },
+                { x1: A.x + A.w, x2: B.x, y: (A.cy + B.cy) / 2, gap: gapAB },
+                { x1: B.x + B.w, x2: targetX_after, y: (B.cy + curCenterY) / 2, gap: gapAB },
               ],
             };
           }
-          // Position before A (matching gapAB)
+
+          // Case 3: Dragging M before A (matching gapAB)
           const targetX_before = A.x - gapAB - testW;
           const diff_before = Math.abs(testX - targetX_before);
           if (diff_before < bestDistX) {
             bestDistX = diff_before;
             bestSnapX = targetX_before;
             guideX = null;
-            const midY =
-              (Math.min(testY, A.y, B.y) + Math.max(testY + testH, A.y + A.h, B.y + B.h)) / 2;
             spacingGuideX = {
               type: "equal_spacing",
               axis: "x",
-              y: midY,
               ranges: [
-                { x1: targetX_before + testW, x2: A.x, gap: gapAB },
-                { x1: A.x + A.w, x2: B.x, gap: gapAB },
+                { x1: targetX_before + testW, x2: A.x, y: (curCenterY + A.cy) / 2, gap: gapAB },
+                { x1: A.x + A.w, x2: B.x, y: (A.cy + B.cy) / 2, gap: gapAB },
               ],
             };
           }
         }
       }
 
-      // Equal Spacing Assistance for 3+ objects (Vertical)
+      // Vertical Equal Spacing
       const sortedY = otherBoxes.slice().sort((a, b) => a.y - b.y);
       for (let i = 0; i < sortedY.length - 1; i++) {
         const A = sortedY[i];
         const B = sortedY[i + 1];
         const gapAB = B.y - (A.y + A.h);
         if (gapAB > 4) {
-          // Position between A and B
-          const targetY_mid = A.y + A.h + (gapAB - testH) / 2;
-          const diff_mid = Math.abs(testY - targetY_mid);
-          if (diff_mid < bestDistY && gapAB > testH) {
-            bestDistY = diff_mid;
-            bestSnapY = targetY_mid;
-            guideY = null;
-            const actualGap = (gapAB - testH) / 2;
-            const midX =
-              (Math.min(testX, A.x, B.x) + Math.max(testX + testW, A.x + A.w, B.x + B.w)) / 2;
-            spacingGuideY = {
-              type: "equal_spacing",
-              axis: "y",
-              x: midX,
-              ranges: [
-                { y1: A.y + A.h, y2: targetY_mid, gap: actualGap },
-                { y1: targetY_mid + testH, y2: B.y, gap: actualGap },
-              ],
-            };
+          // Case 1: Dragging M in between A and B
+          if (gapAB > testH + 4) {
+            const targetGap = (gapAB - testH) / 2;
+            const targetY_mid = A.y + A.h + targetGap;
+            const diff_mid = Math.abs(testY - targetY_mid);
+            if (diff_mid < bestDistY) {
+              bestDistY = diff_mid;
+              bestSnapY = targetY_mid;
+              guideY = null;
+              const midX = (A.cx + B.cx + curCenterX) / 3;
+              spacingGuideY = {
+                type: "equal_spacing",
+                axis: "y",
+                ranges: [
+                  { y1: A.y + A.h, y2: targetY_mid, x: midX, gap: targetGap },
+                  { y1: targetY_mid + testH, y2: B.y, x: midX, gap: targetGap },
+                ],
+              };
+            }
           }
-          // Position after B (matching gapAB)
+
+          // Case 2: Dragging M below B (matching gapAB)
           const targetY_after = B.y + B.h + gapAB;
           const diff_after = Math.abs(testY - targetY_after);
           if (diff_after < bestDistY) {
             bestDistY = diff_after;
             bestSnapY = targetY_after;
             guideY = null;
-            const midX =
-              (Math.min(testX, A.x, B.x) + Math.max(testX + testW, A.x + A.w, B.x + B.w)) / 2;
             spacingGuideY = {
               type: "equal_spacing",
               axis: "y",
-              x: midX,
               ranges: [
-                { y1: A.y + A.h, y2: B.y, gap: gapAB },
-                { y1: B.y + B.h, y2: targetY_after, gap: gapAB },
+                { y1: A.y + A.h, y2: B.y, x: (A.cx + B.cx) / 2, gap: gapAB },
+                { y1: B.y + B.h, y2: targetY_after, x: (B.cx + curCenterY) / 2, gap: gapAB },
               ],
             };
           }
-          // Position before A (matching gapAB)
+
+          // Case 3: Dragging M above A (matching gapAB)
           const targetY_before = A.y - gapAB - testH;
           const diff_before = Math.abs(testY - targetY_before);
           if (diff_before < bestDistY) {
             bestDistY = diff_before;
             bestSnapY = targetY_before;
             guideY = null;
-            const midX =
-              (Math.min(testX, A.x, B.x) + Math.max(testX + testW, A.x + A.w, B.x + B.w)) / 2;
             spacingGuideY = {
               type: "equal_spacing",
               axis: "y",
-              x: midX,
               ranges: [
-                { y1: targetY_before + testH, y2: A.y, gap: gapAB },
-                { y1: A.y + A.h, y2: B.y, gap: gapAB },
+                { y1: targetY_before + testH, y2: A.y, x: (curCenterX + A.cx) / 2, gap: gapAB },
+                { y1: A.y + A.h, y2: B.y, x: (A.cx + B.cx) / 2, gap: gapAB },
               ],
             };
           }

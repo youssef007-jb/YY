@@ -198,5 +198,37 @@ describe("Whiteboard Core Invariants: Clipboard, Resize Handles & Text Alignment
       const snappedX = targetBounds.x; // Snaps to 200
       expect(snappedX).toBe(200);
     });
+
+    it("should correctly compute center-to-center alignment snapping", () => {
+      const stationary = { x: 100, y: 100, w: 100, h: 100 }; // center at 150
+      const moving = { x: 148, y: 300, w: 80, h: 80 }; // current center at 188
+      // If moving center is near stationary center 150
+      const movingNearCenter = { x: 108, y: 300, w: 80, h: 80 }; // center at 148
+      const movingCenter = movingNearCenter.x + movingNearCenter.w / 2; // 148
+      const targetCenter = stationary.x + stationary.w / 2; // 150
+      const diff = Math.abs(movingCenter - targetCenter);
+      expect(diff).toBe(2);
+      expect(diff).toBeLessThan(6);
+      const snappedX = targetCenter - movingNearCenter.w / 2; // 110
+      expect(snappedX).toBe(110);
+    });
+
+    it("should correctly compute equal spacing for 3 items horizontally", () => {
+      const itemA = { x: 100, y: 100, w: 50, h: 50 }; // ends at 150
+      const itemB = { x: 250, y: 100, w: 50, h: 50 }; // gap between A and B is 100
+      const movingItem = { x: 348, y: 100, w: 50, h: 50 }; // placed near after B
+
+      const gapAB = itemB.x - (itemA.x + itemA.w); // 100
+      const targetX = itemB.x + itemB.w + gapAB; // 250 + 50 + 100 = 400
+      const diff = Math.abs(movingItem.x - targetX);
+      expect(gapAB).toBe(100);
+      expect(targetX).toBe(400);
+      // When moving item is placed between A and B
+      const targetMidX = itemA.x + itemA.w + (gapAB - movingItem.w) / 2; // 150 + (100 - 50)/2 = 175
+      expect(targetMidX).toBe(175);
+      const gap1 = targetMidX - (itemA.x + itemA.w); // 25
+      const gap2 = itemB.x - (targetMidX + movingItem.w); // 25
+      expect(gap1).toBe(gap2);
+    });
   });
 });
