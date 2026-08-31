@@ -618,3 +618,120 @@ export class BatchConversionQueue {
     return newBoard;
   }
 }
+
+type BatchListener = (state: BatchProgressState | null) => void;
+type ItemCompletedListener = (board: BoardRecord, item: BatchItem) => void;
+
+/**
+ * GlobalBatchManager persists batch conversions across navigation / component unmounts.
+ */
+class GlobalBatchManager {
+  private queue: BatchConversionQueue | null = null;
+  private currentProgress: BatchProgressState | null = null;
+  private listeners: Set<BatchListener> = new Set();
+  private itemCompletedListeners: Set<ItemCompletedListener> = new Set();
+
+  public getProgress(): BatchProgressState | null {
+    return this.currentProgress;
+  }
+
+  public getQueue(): BatchConversionQueue | null {
+    return this.queue;
+  }
+
+  public subscribe(listener: BatchListener): () => void {
+    this.listeners.add(listener);
+    listener(this.currentProgress ? { ...this.currentProgress } : null);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  public onItemCompleted(listener: ItemCompletedListener): () => void {
+    this.itemCompletedListeners.add(listener);
+    return () => {
+      this.itemCompletedListeners.delete(listener);
+    };
+  }
+
+  private notify() {
+    const payload = this.currentProgress ? { ...this.currentProgress } : null;
+    for (const listener of this.listeners) {
+      try {
+        listener(payload);
+      } catch (err) {
+        console.error("Batch listener error:", err);
+      }
+    }
+  }
+
+  public startBatch(
+    files: File[],
+    options: {
+      concurrency?: number;
+      onItemCompleted?: (board: BoardRecord, item: BatchItem) => void;
+      onItemFailed?: (errMsg: string, item: BatchItem) => void;
+      onAllFinished?: () => void;
+    } = {}
+  ): BatchConversionQueue {
+    if (this.queue && !this.currentProgress?.isFinished) {
+      this.queue.cancel();
+    }
+
+    const queue = new BatchConversionQueue(files, {
+      concurrency: options.concurrency ?? 3,
+      onProgress: (prog) => {
+        this.currentProgress = { ...prog };
+        this.notify();
+      },
+      onItemCompleted: (board, item) => {
+        options.onItemCompleted?.(board, item);
+        for (const cb of this.itemCompletedListeners) {
+          try {
+            cb(board, item);
+          } catch (e) {
+            console.error(e);
+          }
+        }
+      },
+      onItemFailed: (errMsg, item) => {
+        options.onItemFailed?.(errMsg, item);
+      },
+      onAllFinished: () => {
+        options.onAllFinished?.();
+      },
+    });
+
+    this.queue = queue;
+    queue.start();
+    return queue;
+  }
+
+  public retryItem(itemId: string) {
+    this.queue?.retryItem(itemId);
+  }
+
+  public retryAllFailed() {
+    this.queue?.retryAllFailed();
+  }
+
+  public async fallbackToImage(itemId: string) {
+    await this.queue?.fallbackToImage(itemId);
+  }
+
+  public async fallbackAllFailedToImage() {
+    await this.queue?.fallbackAllFailedToImage();
+  }
+
+  public cancel() {
+    this.queue?.cancel();
+  }
+
+  public dismiss() {
+    this.currentProgress = null;
+    this.notify();
+  }
+}
+
+export const globalBatchManager = new GlobalBatchManager();
+

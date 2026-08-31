@@ -3433,7 +3433,7 @@ window.__hbiboInit = function (opts) {
         const pad = 8 / z;
         const rhX = b.x + b.w / 2,
           rhY = b.y + b.h + pad + 20 / z;
-        if (Math.hypot(wp.x - rhX, wp.y - rhY) < tol + 6) return { mode: "rotateMulti" };
+        if (Math.hypot(wp.x - rhX, wp.y - rhY) < tol + 6) return { mode: "rotateMulti", handlePos: { x: rhX, y: rhY } };
         const corners = [
           { x: b.x - pad, y: b.y - pad },
           { x: b.x + b.w + pad, y: b.y - pad },
@@ -3442,7 +3442,7 @@ window.__hbiboInit = function (opts) {
         ];
         for (let i = 0; i < corners.length; i++) {
           if (Math.hypot(wp.x - corners[i].x, wp.y - corners[i].y) < tol)
-            return { mode: "resizeMulti", idx: i, type: "corner" };
+            return { mode: "resizeMulti", idx: i, type: "corner", handlePos: corners[i], pad };
         }
         const sides = [
           { x: b.x - pad, y: b.y + b.h / 2 },
@@ -3450,7 +3450,7 @@ window.__hbiboInit = function (opts) {
         ];
         for (let i = 0; i < sides.length; i++) {
           if (Math.hypot(wp.x - sides[i].x, wp.y - sides[i].y) < tol)
-            return { mode: "sideMulti", idx: i, type: "side" };
+            return { mode: "sideMulti", idx: i, type: "side", handlePos: sides[i], pad };
         }
       }
       return null;
@@ -3463,7 +3463,7 @@ window.__hbiboInit = function (opts) {
       ];
       for (let i = 0; i < 2; i++) {
         if (Math.hypot(wp.x - pts[i].x, wp.y - pts[i].y) < tol + 4)
-          return { mode: "endpoint", idx: i };
+          return { mode: "endpoint", idx: i, handlePos: pts[i] };
       }
       return null;
     }
@@ -3475,7 +3475,7 @@ window.__hbiboInit = function (opts) {
     const localWp = el.rotation ? rotatePoint(wp.x, wp.y, cx, cy, -el.rotation) : wp;
     const rhX = b.x + b.w / 2,
       rhY = b.y + b.h + pad + 20 / z;
-    if (Math.hypot(localWp.x - rhX, localWp.y - rhY) < tol + 6) return { mode: "rotate" };
+    if (Math.hypot(localWp.x - rhX, localWp.y - rhY) < tol + 6) return { mode: "rotate", handlePos: { x: rhX, y: rhY } };
     const corners = [
       { x: b.x - pad, y: b.y - pad },
       { x: b.x + b.w + pad, y: b.y - pad },
@@ -3484,7 +3484,7 @@ window.__hbiboInit = function (opts) {
     ];
     for (let i = 0; i < corners.length; i++) {
       if (Math.hypot(localWp.x - corners[i].x, localWp.y - corners[i].y) < tol)
-        return { mode: "resize", idx: i, type: "corner" };
+        return { mode: "resize", idx: i, type: "corner", handlePos: corners[i], pad };
     }
     const leftX = b.x - pad;
     const rightX = b.x + b.w + pad;
@@ -3492,10 +3492,10 @@ window.__hbiboInit = function (opts) {
     const botY = b.y + b.h + pad;
     const sideTol = Math.max(tol, 10 / z);
     if (distToSegment(localWp.x, localWp.y, leftX, topY, leftX, botY) <= sideTol) {
-      return { mode: "side", idx: 0, type: "side" };
+      return { mode: "side", idx: 0, type: "side", handlePos: { x: leftX, y: b.y + b.h / 2 }, pad };
     }
     if (distToSegment(localWp.x, localWp.y, rightX, topY, rightX, botY) <= sideTol) {
-      return { mode: "side", idx: 1, type: "side" };
+      return { mode: "side", idx: 1, type: "side", handlePos: { x: rightX, y: b.y + b.h / 2 }, pad };
     }
     return null;
   }
@@ -5904,6 +5904,12 @@ window.__hbiboInit = function (opts) {
             state.transform.mode = hh.mode;
             state.transform.handle = hh;
             state.transform.startMouse = { ...wPos };
+            state.transform.pad = hh.pad;
+            if (hh.handlePos) {
+              state.transform.grabOffset = { x: wPos.x - hh.handlePos.x, y: wPos.y - hh.handlePos.y };
+            } else {
+              state.transform.grabOffset = { x: 0, y: 0 };
+            }
             state.transform.startMultiBounds = getMultiBounds(state.selectedIds);
             state.transform.center = getCenter(state.transform.startMultiBounds);
             state.transform.startMulti = state.selectedIds
@@ -5935,6 +5941,35 @@ window.__hbiboInit = function (opts) {
               state.transform.mode = hh.mode;
               state.transform.handle = hh;
               state.transform.startMouse = { ...wPos };
+              state.transform.startBounds = getBounds(sel);
+              state.transform.center = getCenter(state.transform.startBounds);
+              state.transform.pad = hh.pad;
+              if (hh.handlePos) {
+                if (LINE_TYPES.includes(sel.type)) {
+                  state.transform.grabOffset = { x: wPos.x - hh.handlePos.x, y: wPos.y - hh.handlePos.y };
+                } else if (sel.rotation) {
+                  const c0 = state.transform.center;
+                  const sb = state.transform.startBounds;
+                  const idx = hh.idx;
+                  const isSide = hh.type === "side";
+                  let pOppLocal;
+                  if (isSide) {
+                    pOppLocal = idx === 0 ? { x: sb.x + sb.w, y: sb.y + sb.h / 2 } : { x: sb.x, y: sb.y + sb.h / 2 };
+                  } else {
+                    if (idx === 0) pOppLocal = { x: sb.x + sb.w, y: sb.y + sb.h };
+                    else if (idx === 1) pOppLocal = { x: sb.x, y: sb.y + sb.h };
+                    else if (idx === 2) pOppLocal = { x: sb.x, y: sb.y };
+                    else pOppLocal = { x: sb.x + sb.w, y: sb.y };
+                  }
+                  const pOppWorld = rotatePoint(pOppLocal.x, pOppLocal.y, c0.x, c0.y, sel.rotation);
+                  const startLocalMouse = rotatePoint(wPos.x, wPos.y, pOppWorld.x, pOppWorld.y, -sel.rotation);
+                  state.transform.grabOffset = { x: startLocalMouse.x - hh.handlePos.x, y: startLocalMouse.y - hh.handlePos.y };
+                } else {
+                  state.transform.grabOffset = { x: wPos.x - hh.handlePos.x, y: wPos.y - hh.handlePos.y };
+                }
+              } else {
+                state.transform.grabOffset = { x: 0, y: 0 };
+              }
               state.transform.startEl = {
                 ...sel,
                 points: sel.points ? sel.points.map((p) => ({ ...p })) : null,
@@ -5945,8 +5980,6 @@ window.__hbiboInit = function (opts) {
                 size: sel.size,
                 rotation: sel.rotation,
               };
-              state.transform.startBounds = getBounds(sel);
-              state.transform.center = getCenter(state.transform.startBounds);
               return;
             }
           }

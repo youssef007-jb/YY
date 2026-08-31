@@ -41,7 +41,7 @@ import { renderPdfToImages } from "@/lib/pdf-importer";
 import { generateBoardThumbnail } from "@/lib/thumbnail-generator";
 import { embedSmartPngMetadata, extractSmartPngMetadata } from "@/lib/smart-png";
 import { stripFileExtension, buildDownloadFilename } from "@/lib/filename-utils";
-import { BatchConversionQueue, type BatchProgressState } from "@/lib/batch-converter";
+import { globalBatchManager, type BatchProgressState } from "@/lib/batch-converter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -556,11 +556,27 @@ function HomePage() {
     separateBoards: BoardRecord[];
     rawFiles: File[];
   } | null>(null);
-  const [batchProgress, setBatchProgress] = useState<BatchProgressState | null>(null);
+  const [batchProgress, setBatchProgress] = useState<BatchProgressState | null>(() => globalBatchManager.getProgress());
   const [batchExpanded, setBatchExpanded] = useState(false);
-  const queueRef = useRef<BatchConversionQueue | null>(null);
   const renameRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const unsubProgress = globalBatchManager.subscribe((state) => {
+      setBatchProgress(state ? { ...state } : null);
+    });
+    const unsubCompleted = globalBatchManager.onItemCompleted((board) => {
+      setBoards((prev) => {
+        const list = prev || [];
+        const filtered = list.filter((b) => b.id !== board.id);
+        return [board, ...filtered];
+      });
+    });
+    return () => {
+      unsubProgress();
+      unsubCompleted();
+    };
+  }, []);
 
   useEffect(() => {
     document.body.classList.add("hbibo-scroll");
@@ -1137,11 +1153,8 @@ function HomePage() {
 
     // 2. If there are normal files needing conversion, start the conversion queue
     if (normalFiles.length > 0) {
-      const queue = new BatchConversionQueue(normalFiles, {
+      globalBatchManager.startBatch(normalFiles, {
         concurrency: 3,
-        onProgress: (prog) => {
-          setBatchProgress({ ...prog });
-        },
         onItemCompleted: (board) => {
           // First finished = first displayed! Reactively update boards list
           setBoards((prev) => {
@@ -1157,38 +1170,35 @@ function HomePage() {
           void refresh();
         },
       });
-
-      queueRef.current = queue;
-      queue.start();
     } else {
       await refresh();
     }
   };
 
   const handleRetryItem = (itemId: string) => {
-    queueRef.current?.retryItem(itemId);
+    globalBatchManager.retryItem(itemId);
   };
 
   const handleRetryAllFailed = () => {
-    queueRef.current?.retryAllFailed();
+    globalBatchManager.retryAllFailed();
   };
 
   const handleFallbackToImage = async (itemId: string) => {
-    await queueRef.current?.fallbackToImage(itemId);
+    await globalBatchManager.fallbackToImage(itemId);
     await refresh();
   };
 
   const handleSaveAllAsImage = async () => {
-    await queueRef.current?.fallbackAllFailedToImage();
+    await globalBatchManager.fallbackAllFailedToImage();
     await refresh();
   };
 
   const handleCancelBatch = () => {
-    queueRef.current?.cancel();
+    globalBatchManager.cancel();
   };
 
   const handleDismissBatch = () => {
-    setBatchProgress(null);
+    globalBatchManager.dismiss();
   };
 
   const handleOpenCombined = async () => {
