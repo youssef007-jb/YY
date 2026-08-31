@@ -1009,112 +1009,25 @@ export function compileConversionResponse(
 
 /**
  * Converts a whiteboard image / screenshot / diagram into native, editable whiteboard objects.
+ * Exactly ONE AI call per conversion, via Lovable's built-in AI gateway.
+ * Never falls back to a flat image: failures throw so the UI can show an inline error.
  */
 export async function convertWhiteboardImage(
   req: ConvertImageRequest,
 ): Promise<ConversionResponse> {
   const { width, height, imageBase64, mimeType } = req;
 
-  // Diagnostic logging
-  console.log(`[ImageConverter] ========================================`);
-  console.log(`[ImageConverter] Conversion started`);
-  console.log(`[ImageConverter] Target image dimensions: ${width}x${height}`);
-  console.log(`[ImageConverter] MIME type: ${mimeType}, base64 length: ${imageBase64.length}`);
+  console.log(`[ImageConverter] Conversion started (${width}x${height}, ${mimeType})`);
 
-  // 1. Primary: Gemini Vision Multimodal Extraction
-  if (process.env["GEMINI_API_KEY"]) {
-    console.log(`[ImageConverter] Invoking Gemini Vision Pipeline (Primary)...`);
-    const geminiResult = await callGeminiVision(imageBase64, mimeType, width, height);
+  const result = await callLovableVision(imageBase64, mimeType, width, height);
 
-    if (geminiResult && geminiResult.objects.length > 0) {
-      console.log(
-        `[ImageConverter] Gemini Vision successfully extracted ${geminiResult.objects.length} objects`,
-      );
-      console.log(
-        `[ImageConverter] First reconstructed object:`,
-        JSON.stringify(geminiResult.objects[0]),
-      );
-      console.log(
-        `[ImageConverter] Final number of objects to insert: ${geminiResult.objects.length}`,
-      );
-
-      return compileConversionResponse(
-        geminiResult.title,
-        width,
-        height,
-        geminiResult.objects,
-        "gemini-vision",
-      );
-    }
-    console.log(`[ImageConverter] Gemini Vision completed. Proceeding to OpenRouter fallback.`);
-  }
-
-  // 2. Fallback Provider: OpenRouter Vision API (invoked ONLY after Gemini fails or is unavailable)
-  if (process.env["OPENROUTER_API_KEY"]) {
-    console.log(`[ImageConverter] Invoking OpenRouter Vision Fallback Pipeline...`);
-    const openRouterResult = await callOpenRouterVision(imageBase64, mimeType, width, height);
-
-    if (openRouterResult && openRouterResult.objects.length > 0) {
-      console.log(
-        `[ImageConverter] OpenRouter Vision fallback successfully extracted ${openRouterResult.objects.length} objects`,
-      );
-      console.log(
-        `[ImageConverter] First reconstructed object:`,
-        JSON.stringify(openRouterResult.objects[0]),
-      );
-      console.log(
-        `[ImageConverter] Final number of objects to insert: ${openRouterResult.objects.length}`,
-      );
-
-      return compileConversionResponse(
-        openRouterResult.title,
-        width,
-        height,
-        openRouterResult.objects,
-        "openrouter-vision",
-      );
-    }
-    console.log(`[ImageConverter] OpenRouter Vision completed. Proceeding to OCR/CV fallback.`);
-  }
-
-  // 3. Secondary: Deterministic OCR + Computer Vision pipeline
-  console.log(`[ImageConverter] Running Deterministic OCR + Computer Vision Pipeline...`);
-  const ocrCvResult = await runOcrAndComputerVision(req);
-
-  if (ocrCvResult.objects && ocrCvResult.objects.length > 0) {
-    console.log(`[ImageConverter] OCR/CV extracted ${ocrCvResult.objects.length} objects`);
-    return compileConversionResponse(
-      ocrCvResult.title || "Imported Whiteboard",
-      width,
-      height,
-      ocrCvResult.objects,
-      "ocr-cv",
+  if (!result || result.objects.length === 0) {
+    throw new Error(
+      "The AI could not extract any editable elements from this image. Please try a clearer image.",
     );
   }
 
-  // 4. Fallback: If image contains content but zero vector primitives were extracted,
-  // ensure the whiteboard is NEVER empty by providing a clean base image canvas object
-  console.log(`[ImageConverter] Applying fallback safe canvas image object`);
-  const fullDataUrl = imageBase64.startsWith("data:")
-    ? imageBase64
-    : `data:${mimeType || "image/png"};base64,${imageBase64}`;
-
-  const fallbackImageObject: WhiteboardCanvasObject = {
-    id: genId(),
-    type: "image",
-    x: 0,
-    y: 0,
-    w: width,
-    h: height,
-    src: fullDataUrl,
-    rotation: 0,
-  };
-
-  return compileConversionResponse(
-    "Imported Whiteboard",
-    width,
-    height,
-    [fallbackImageObject],
-    "fallback",
-  );
+  console.log(`[ImageConverter] Extracted ${result.objects.length} editable objects`);
+  return compileConversionResponse(result.title, width, height, result.objects, "gemini-vision");
 }
+
