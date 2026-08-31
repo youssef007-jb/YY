@@ -175,6 +175,41 @@
     };
   }
 
+  function sanitizeBoardForStorage(board) {
+    if (!board) return board;
+    const clean = { ...board };
+    if (Array.isArray(clean.elements)) {
+      clean.elements = clean.elements.map((el) => {
+        if (!el || typeof el !== "object") return el;
+        const cleanEl = {};
+        for (const k of Object.keys(el)) {
+          if (
+            k === "img" ||
+            k.startsWith("_") ||
+            typeof el[k] === "function" ||
+            (typeof HTMLElement !== "undefined" && el[k] instanceof HTMLElement)
+          ) {
+            continue;
+          }
+          cleanEl[k] = el[k];
+        }
+        return cleanEl;
+      });
+    }
+    if (clean.thumb && typeof clean.thumb !== "string") {
+      if (typeof clean.thumb.toDataURL === "function") {
+        try {
+          clean.thumb = clean.thumb.toDataURL("image/jpeg", 0.85);
+        } catch (e) {
+          clean.thumb = null;
+        }
+      } else {
+        clean.thumb = null;
+      }
+    }
+    return clean;
+  }
+
   const Store = {
     genId,
     genLayerId,
@@ -212,7 +247,8 @@
           }
         }
       }
-      await tx("readwrite", (s) => s.put(board));
+      const serializableBoard = sanitizeBoardForStorage(board);
+      await tx("readwrite", (s) => s.put(serializableBoard));
       return board;
     },
     async deleteBoard(id) {

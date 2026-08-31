@@ -4515,7 +4515,10 @@ window.__hbiboInit = function (opts) {
 
   function applyReconstructedElementsToCurrentBoard(reconstructed, keepBackup, originalImg) {
     pushUndo();
-    const elementsToAdd = [...reconstructed.elements];
+    const elementsToAdd = reconstructed.elements.map((el) => {
+      const { img, ...rest } = el;
+      return { ...rest };
+    });
 
     if (keepBackup && originalImg) {
       const backupW = reconstructed.bounds.width;
@@ -4526,7 +4529,6 @@ window.__hbiboInit = function (opts) {
         id: genId(),
         type: "image",
         src: originalImg.src,
-        img: originalImg,
         x: backupX,
         y: backupY,
         w: backupW,
@@ -4537,11 +4539,8 @@ window.__hbiboInit = function (opts) {
     }
 
     elementsToAdd.forEach((el) => {
-      if (el.type === "image" && !el.img && el.src) {
-        const img = new Image();
-        img.onload = render;
-        img.src = el.src;
-        el.img = img;
+      if (el.type === "image" && el.src) {
+        ensureImageLoaded(el);
       }
     });
 
@@ -4566,7 +4565,10 @@ window.__hbiboInit = function (opts) {
   }
 
   function applyReconstructedElementsToNewBoard(reconstructed, keepBackup, originalImg, title) {
-    const elementsToAdd = [...reconstructed.elements];
+    const elementsToAdd = reconstructed.elements.map((el) => {
+      const { img, ...rest } = el;
+      return { ...rest };
+    });
 
     if (keepBackup && originalImg) {
       const backupW = reconstructed.bounds.width;
@@ -4577,7 +4579,6 @@ window.__hbiboInit = function (opts) {
         id: genId(),
         type: "image",
         src: originalImg.src,
-        img: originalImg,
         x: backupX,
         y: backupY,
         w: backupW,
@@ -4586,15 +4587,6 @@ window.__hbiboInit = function (opts) {
       };
       elementsToAdd.unshift(backupEl);
     }
-
-    elementsToAdd.forEach((el) => {
-      if (el.type === "image" && !el.img && el.src) {
-        const img = new Image();
-        img.onload = render;
-        img.src = el.src;
-        el.img = img;
-      }
-    });
 
     const boardName = title || "Imported Whiteboard";
     const newBoard =
@@ -4616,7 +4608,10 @@ window.__hbiboInit = function (opts) {
             thumb: null,
           };
 
-    newBoard.elements = elementsToAdd;
+    newBoard.elements = elementsToAdd.map((el) => {
+      const { img, ...rest } = el;
+      return { ...rest };
+    });
     console.log(
       `[SmartImageImporter] Final number of objects inserted into the whiteboard: ${elementsToAdd.length}, new whiteboard ID: ${newBoard.id}`,
     );

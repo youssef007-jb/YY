@@ -215,6 +215,43 @@ export async function getBoard(id: string): Promise<BoardRecord | null> {
   return b ? normalizeBoard(b) : null;
 }
 
+export function sanitizeBoardForStorage(board: BoardRecord): BoardRecord {
+  if (!board) return board;
+  const clean = { ...board };
+  if (Array.isArray(clean.elements)) {
+    clean.elements = clean.elements.map((el) => {
+      if (!el || typeof el !== "object") return el;
+      const cleanEl: Record<string, unknown> = {};
+      const obj = el as Record<string, unknown>;
+      for (const k of Object.keys(obj)) {
+        if (
+          k === "img" ||
+          k.startsWith("_") ||
+          typeof obj[k] === "function" ||
+          (typeof HTMLElement !== "undefined" && obj[k] instanceof HTMLElement)
+        ) {
+          continue;
+        }
+        cleanEl[k] = obj[k];
+      }
+      return cleanEl;
+    });
+  }
+  if (clean.thumb && typeof clean.thumb !== "string") {
+    const thumbObj = clean.thumb as unknown as { toDataURL?: (t: string, q: number) => string };
+    if (typeof thumbObj?.toDataURL === "function") {
+      try {
+        clean.thumb = thumbObj.toDataURL("image/jpeg", 0.85);
+      } catch {
+        clean.thumb = null;
+      }
+    } else {
+      clean.thumb = null;
+    }
+  }
+  return clean;
+}
+
 export async function putBoard(board: BoardRecord): Promise<BoardRecord> {
   normalizeBoard(board);
   if (
@@ -232,7 +269,8 @@ export async function putBoard(board: BoardRecord): Promise<BoardRecord> {
       board.week_category = cat.week_category;
     }
   }
-  await run("readwrite", (s) => s.put(board));
+  const serializable = sanitizeBoardForStorage(board);
+  await run("readwrite", (s) => s.put(serializable));
   return board;
 }
 

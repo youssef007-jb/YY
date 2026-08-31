@@ -478,14 +478,11 @@ export function reconstructWhiteboardElements(
         const wy = mapY(obj.y);
         const w = mapDim((obj.w ?? obj.width) || 120);
         const h = mapDim((obj.h ?? obj.height) || 100, true);
-        const imgObj = new Image();
-        imgObj.src = obj.src;
 
         embeddedImages.push({
           id: obj.id || genId(),
           type: "image",
           src: obj.src,
-          img: imgObj,
           x: wx,
           y: wy,
           w,
@@ -511,14 +508,10 @@ export function reconstructWhiteboardElements(
           const w = mapDim((obj.w ?? obj.width) || 120);
           const h = mapDim((obj.h ?? obj.height) || 100, true);
 
-          const imgObj = new Image();
-          imgObj.src = cropDataUrl;
-
           embeddedImages.push({
             id: obj.id || genId(),
             type: "image",
             src: cropDataUrl,
-            img: imgObj,
             x: wx,
             y: wy,
             w,
@@ -550,8 +543,6 @@ export function reconstructWhiteboardElements(
 
   let originalImageElement: PreparedWhiteboardObject | undefined;
   if (options.keepOriginalImage) {
-    const backupImg = new Image();
-    backupImg.src = sourceImg.src;
     // Place original image cleanly to the left or right of the reconstructed diagram
     const backupX = originX - totalWorldW - 60;
     const backupY = originY;
@@ -560,7 +551,6 @@ export function reconstructWhiteboardElements(
       id: genId(),
       type: "image",
       src: sourceImg.src,
-      img: backupImg,
       x: backupX,
       y: backupY,
       w: totalWorldW,
