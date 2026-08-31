@@ -1482,7 +1482,7 @@ function HomePage() {
   };
 
   return (
-    <main className="min-h-dvh bg-background">
+    <main className="min-h-dvh bg-[#F1F3F5]" style={{ backgroundColor: "#F1F3F5" }}>
       <header className="border-b bg-card/70 backdrop-blur sticky top-0 z-20">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-2 sm:py-2.5">
           <div className="flex items-center gap-2.5 sm:gap-3">
