@@ -672,153 +672,18 @@ function processRawAiObjects(
 }
 
 /**
- * Calls server-side Gemini Vision API using @google/genai with the configurable default model.
- * Exactly one request per conversion.
+ * Calls Lovable's built-in AI gateway (Gemini Flash tier vision) exactly once per conversion.
+ * No user-supplied API key is required — LOVABLE_API_KEY is provisioned by the platform.
  */
-async function callGeminiVision(
+async function callLovableVision(
   rawBase64: string,
   mimeType: string,
   width: number,
   height: number,
 ): Promise<{ title: string; objects: WhiteboardCanvasObject[] } | null> {
-  const apiKey = process.env["GEMINI_API_KEY"];
+  const apiKey = process.env["LOVABLE_API_KEY"];
   if (!apiKey) {
-    console.warn("[ImageConverter] GEMINI_API_KEY not found in environment.");
-    return null;
-  }
-
-  const ai = new GoogleGenAI({
-    apiKey,
-    httpOptions: { headers: { "User-Agent": "aistudio-build" } },
-  });
-
-  const base64Data = cleanBase64(rawBase64);
-  const cleanMime =
-    mimeType.includes("jpeg") || mimeType.includes("jpg")
-      ? "image/jpeg"
-      : mimeType.includes("webp")
-        ? "image/webp"
-        : "image/png";
-
-  const prompt = `Analyze this whiteboard/diagram image (${width}x${height}px).
-Extract all visible text elements, rectangles/boxes/sticky notes, circles/ellipses, and lines/connectors into structured vector elements.
-
-Requirements:
-- x/y are top-left pixel coordinates matching the image's actual pixel dimensions (${width}x${height}).
-- Split text into separate elements the way a human editor would (title vs. paragraph vs. label).
-- Estimate font size (fontSize) from how large the text visually appears in pixels.
-- Use the real hex colors seen in the image for fill, stroke, and text colors.
-- Only include shapes and lines that are actually visible in the image.
-- Return raw JSON only, no markdown fences or commentary.
-
-Output MUST be a single JSON object with this exact schema:
-{
-  "canvasWidth": ${width},
-  "canvasHeight": ${height},
-  "backgroundColor": "#ffffff",
-  "elements": [
-    { "type": "text", "text": "string", "x": number, "y": number, "width": number, "height": number, "fontSize": number, "fontWeight": "normal" | "bold", "fontStyle": "normal" | "italic", "color": "#hex", "textAlign": "left" | "center" | "right", "fontFamily": "string" },
-    { "type": "rect", "x": number, "y": number, "width": number, "height": number, "fill": "#hex" | "transparent", "stroke": "#hex", "strokeWidth": number, "rx": number },
-    { "type": "circle", "x": number, "y": number, "radius": number, "fill": "#hex" | "transparent", "stroke": "#hex", "strokeWidth": number },
-    { "type": "line", "x1": number, "y1": number, "x2": number, "y2": number, "stroke": "#hex", "strokeWidth": number }
-  ]
-}`;
-
-  const candidateModels = [
-    DEFAULT_GEMINI_VISION_MODEL,
-    "gemini-flash-latest",
-    "gemini-3.1-flash-lite",
-  ];
-
-  for (const modelName of candidateModels) {
-    try {
-      console.log(`[ImageConverter] Calling Gemini Vision with model: ${modelName}`);
-      const startTime = Date.now();
-
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: [
-          {
-            role: "user",
-            parts: [
-              { text: prompt },
-              {
-                inlineData: {
-                  data: base64Data,
-                  mimeType: cleanMime,
-                },
-              },
-            ],
-          },
-        ],
-        config: {
-          responseMimeType: "application/json",
-        },
-      });
-
-      const duration = Date.now() - startTime;
-      const rawText = response.text || "";
-      console.log(
-        `[ImageConverter] Gemini Vision responded in ${duration}ms, response length: ${rawText.length}`,
-      );
-
-      if (!rawText.trim()) continue;
-
-      const parsed = extractAndParseJson(rawText);
-      if (!parsed) {
-        continue;
-      }
-
-      const rawElements = Array.isArray(parsed["elements"])
-        ? (parsed["elements"] as Array<Record<string, unknown>>)
-        : Array.isArray(parsed["objects"])
-          ? (parsed["objects"] as Array<Record<string, unknown>>)
-          : [];
-
-      console.log(
-        `[ImageConverter] Parsed ${rawElements.length} raw elements from Gemini Vision (${modelName})`,
-      );
-
-      const convertedObjects = processRawAiObjects(rawElements, width, height);
-
-      if (convertedObjects.length > 0) {
-        return {
-          title: typeof parsed["title"] === "string" ? parsed["title"] : "Imported Whiteboard",
-          objects: convertedObjects,
-        };
-      }
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      const isQuota =
-        errMsg.includes("429") || errMsg.includes("quota") || errMsg.includes("RESOURCE_EXHAUSTED");
-      if (isQuota) {
-        console.log(
-          `[ImageConverter] Gemini model ${modelName} quota limit reached. Trying next model or fallback.`,
-        );
-      } else {
-        console.log(
-          `[ImageConverter] Gemini model ${modelName} unavailable. Trying next model or fallback.`,
-        );
-      }
-    }
-  }
-
-  return null;
-}
-
-/**
- * Calls OpenRouter Vision API as a fallback when Gemini is unavailable or fails.
- */
-async function callOpenRouterVision(
-  rawBase64: string,
-  mimeType: string,
-  width: number,
-  height: number,
-): Promise<{ title: string; objects: WhiteboardCanvasObject[] } | null> {
-  const apiKey = process.env["OPENROUTER_API_KEY"];
-  if (!apiKey || !apiKey.trim()) {
-    console.log("[ImageConverter] OPENROUTER_API_KEY not configured, skipping OpenRouter fallback");
-    return null;
+    throw new Error("AI is not configured for this project (missing Lovable AI key).");
   }
 
   const base64Data = cleanBase64(rawBase64);
@@ -828,8 +693,6 @@ async function callOpenRouterVision(
       : mimeType.includes("webp")
         ? "image/webp"
         : "image/png";
-
-  const dataUri = `data:${cleanMime};base64,${base64Data}`;
 
   const promptText = `Analyze this whiteboard/diagram image (${width}x${height}px).
 Extract all visible text elements, rectangles/boxes/sticky notes, circles/ellipses, and lines/connectors into structured vector elements.
@@ -848,110 +711,75 @@ Output MUST be a single JSON object with this exact schema:
   "canvasHeight": ${height},
   "backgroundColor": "#ffffff",
   "elements": [
-    { "type": "text", "text": "string", "x": number, "y": number, "width": number, "height": number, "fontSize": number, "fontWeight": "normal" | "bold", "fontStyle": "normal" | "italic", "color": "#hex", "textAlign": "left" | "center" | "right", "fontFamily": "string" },
-    { "type": "rect", "x": number, "y": number, "width": number, "height": number, "fill": "#hex" | "transparent", "stroke": "#hex", "strokeWidth": number, "rx": number },
+    { "type": "text", "text": "string", "x": number, "y": number, "width": number, "height": number, "fontSize": number, "fontWeight": "normal" | "bold", "color": "#hex", "textAlign": "left" | "center" | "right" },
+    { "type": "rect", "x": number, "y": number, "width": number, "height": number, "fill": "#hex" | "transparent", "stroke": "#hex", "strokeWidth": number },
     { "type": "circle", "x": number, "y": number, "radius": number, "fill": "#hex" | "transparent", "stroke": "#hex", "strokeWidth": number },
     { "type": "line", "x1": number, "y1": number, "x2": number, "y2": number, "stroke": "#hex", "strokeWidth": number }
   ]
 }`;
 
-  const candidateModels = [
-    "google/gemini-2.0-flash-001",
-    "qwen/qwen-2.5-vl-72b-instruct:free",
-    "meta-llama/llama-3.2-11b-vision-instruct:free",
-    "mistralai/pixtral-12b:free",
-    "openai/gpt-4o-mini",
-  ];
-
-  for (const model of candidateModels) {
-    try {
-      console.log(`[ImageConverter] Calling OpenRouter Vision fallback with model: ${model}`);
-      const startTime = Date.now();
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 35000);
-
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey.trim()}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "https://ai.studio",
-          "X-Title": "Whiteboard AI Converter",
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
+  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "google/gemini-3.7-flash",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: promptText },
             {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: promptText,
-                },
-                {
-                  type: "image_url",
-                  image_url: {
-                    url: dataUri,
-                  },
-                },
-              ],
+              type: "image_url",
+              image_url: { url: `data:${cleanMime};base64,${base64Data}` },
             },
           ],
-          response_format: { type: "json_object" },
-          temperature: 0.1,
-        }),
-        signal: controller.signal,
-      });
+        },
+      ],
+    }),
+  });
 
-      clearTimeout(timeoutId);
-      const duration = Date.now() - startTime;
-
-      if (!res.ok) {
-        const errBody = await res.text().catch(() => "");
-        console.warn(
-          `[ImageConverter] OpenRouter model ${model} HTTP ${res.status} error:`,
-          errBody.slice(0, 200),
-        );
-        continue;
-      }
-
-      const json = await res.json();
-      const content = json.choices?.[0]?.message?.content;
-      console.log(
-        `[ImageConverter] OpenRouter (${model}) responded in ${duration}ms, content length: ${content?.length || 0}`,
-      );
-
-      if (!content || typeof content !== "string" || !content.trim()) continue;
-
-      const parsed = extractAndParseJson(content);
-      if (!parsed) continue;
-
-      const rawElements = Array.isArray(parsed["elements"])
-        ? (parsed["elements"] as Array<Record<string, unknown>>)
-        : Array.isArray(parsed["objects"])
-          ? (parsed["objects"] as Array<Record<string, unknown>>)
-          : [];
-
-      console.log(
-        `[ImageConverter] Parsed ${rawElements.length} raw elements from OpenRouter (${model})`,
-      );
-
-      const convertedObjects = processRawAiObjects(rawElements, width, height);
-
-      if (convertedObjects.length > 0) {
-        return {
-          title: typeof parsed["title"] === "string" ? parsed["title"] : "Imported Whiteboard",
-          objects: convertedObjects,
-        };
-      }
-    } catch (err) {
-      console.warn(`[ImageConverter] OpenRouter model ${model} failed:`, err);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    console.warn(`[ImageConverter] AI gateway HTTP ${res.status}: ${body.slice(0, 300)}`);
+    if (res.status === 429) {
+      throw new Error("AI rate limit reached. Please wait a moment and try again.");
     }
+    if (res.status === 402) {
+      throw new Error("AI credits are exhausted for this workspace. Please add credits.");
+    }
+    throw new Error(`AI conversion failed (status ${res.status}).`);
   }
 
-  return null;
+  const json = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const content = json.choices?.[0]?.message?.content;
+  if (!content || !content.trim()) {
+    throw new Error("The AI returned an empty response. Please try again.");
+  }
+
+  const parsed = extractAndParseJson(content);
+  if (!parsed) {
+    throw new Error("The AI returned an invalid response. Please try again.");
+  }
+
+  const rawElements = Array.isArray(parsed["elements"])
+    ? (parsed["elements"] as Array<Record<string, unknown>>)
+    : Array.isArray(parsed["objects"])
+      ? (parsed["objects"] as Array<Record<string, unknown>>)
+      : [];
+
+  const convertedObjects = processRawAiObjects(rawElements, width, height);
+
+  return {
+    title: typeof parsed["title"] === "string" ? parsed["title"] : "Imported Whiteboard",
+    objects: convertedObjects,
+  };
 }
+
 
 export function compileConversionResponse(
   title: string,
