@@ -3433,7 +3433,8 @@ window.__hbiboInit = function (opts) {
         const pad = 8 / z;
         const rhX = b.x + b.w / 2,
           rhY = b.y + b.h + pad + 20 / z;
-        if (Math.hypot(wp.x - rhX, wp.y - rhY) < tol + 6) return { mode: "rotateMulti", handlePos: { x: rhX, y: rhY } };
+        if (Math.hypot(wp.x - rhX, wp.y - rhY) < tol + 6)
+          return { mode: "rotateMulti", handlePos: { x: rhX, y: rhY } };
         const corners = [
           { x: b.x - pad, y: b.y - pad },
           { x: b.x + b.w + pad, y: b.y - pad },
@@ -3475,7 +3476,8 @@ window.__hbiboInit = function (opts) {
     const localWp = el.rotation ? rotatePoint(wp.x, wp.y, cx, cy, -el.rotation) : wp;
     const rhX = b.x + b.w / 2,
       rhY = b.y + b.h + pad + 20 / z;
-    if (Math.hypot(localWp.x - rhX, localWp.y - rhY) < tol + 6) return { mode: "rotate", handlePos: { x: rhX, y: rhY } };
+    if (Math.hypot(localWp.x - rhX, localWp.y - rhY) < tol + 6)
+      return { mode: "rotate", handlePos: { x: rhX, y: rhY } };
     const corners = [
       { x: b.x - pad, y: b.y - pad },
       { x: b.x + b.w + pad, y: b.y - pad },
@@ -3495,7 +3497,13 @@ window.__hbiboInit = function (opts) {
       return { mode: "side", idx: 0, type: "side", handlePos: { x: leftX, y: b.y + b.h / 2 }, pad };
     }
     if (distToSegment(localWp.x, localWp.y, rightX, topY, rightX, botY) <= sideTol) {
-      return { mode: "side", idx: 1, type: "side", handlePos: { x: rightX, y: b.y + b.h / 2 }, pad };
+      return {
+        mode: "side",
+        idx: 1,
+        type: "side",
+        handlePos: { x: rightX, y: b.y + b.h / 2 },
+        pad,
+      };
     }
     return null;
   }
@@ -5906,7 +5914,10 @@ window.__hbiboInit = function (opts) {
             state.transform.startMouse = { ...wPos };
             state.transform.pad = hh.pad;
             if (hh.handlePos) {
-              state.transform.grabOffset = { x: wPos.x - hh.handlePos.x, y: wPos.y - hh.handlePos.y };
+              state.transform.grabOffset = {
+                x: wPos.x - hh.handlePos.x,
+                y: wPos.y - hh.handlePos.y,
+              };
             } else {
               state.transform.grabOffset = { x: 0, y: 0 };
             }
@@ -5946,7 +5957,10 @@ window.__hbiboInit = function (opts) {
               state.transform.pad = hh.pad;
               if (hh.handlePos) {
                 if (LINE_TYPES.includes(sel.type)) {
-                  state.transform.grabOffset = { x: wPos.x - hh.handlePos.x, y: wPos.y - hh.handlePos.y };
+                  state.transform.grabOffset = {
+                    x: wPos.x - hh.handlePos.x,
+                    y: wPos.y - hh.handlePos.y,
+                  };
                 } else if (sel.rotation) {
                   const c0 = state.transform.center;
                   const sb = state.transform.startBounds;
@@ -5954,7 +5968,10 @@ window.__hbiboInit = function (opts) {
                   const isSide = hh.type === "side";
                   let pOppLocal;
                   if (isSide) {
-                    pOppLocal = idx === 0 ? { x: sb.x + sb.w, y: sb.y + sb.h / 2 } : { x: sb.x, y: sb.y + sb.h / 2 };
+                    pOppLocal =
+                      idx === 0
+                        ? { x: sb.x + sb.w, y: sb.y + sb.h / 2 }
+                        : { x: sb.x, y: sb.y + sb.h / 2 };
                   } else {
                     if (idx === 0) pOppLocal = { x: sb.x + sb.w, y: sb.y + sb.h };
                     else if (idx === 1) pOppLocal = { x: sb.x, y: sb.y + sb.h };
@@ -5962,10 +5979,26 @@ window.__hbiboInit = function (opts) {
                     else pOppLocal = { x: sb.x + sb.w, y: sb.y };
                   }
                   const pOppWorld = rotatePoint(pOppLocal.x, pOppLocal.y, c0.x, c0.y, sel.rotation);
-                  const startLocalMouse = rotatePoint(wPos.x, wPos.y, pOppWorld.x, pOppWorld.y, -sel.rotation);
-                  state.transform.grabOffset = { x: startLocalMouse.x - hh.handlePos.x, y: startLocalMouse.y - hh.handlePos.y };
+                  const rot = rotatePoint(
+                    wPos.x - pOppWorld.x,
+                    wPos.y - pOppWorld.y,
+                    0,
+                    0,
+                    -sel.rotation,
+                  );
+                  const startLocalMouse = {
+                    x: pOppLocal.x + rot.x,
+                    y: pOppLocal.y + rot.y,
+                  };
+                  state.transform.grabOffset = {
+                    x: startLocalMouse.x - hh.handlePos.x,
+                    y: startLocalMouse.y - hh.handlePos.y,
+                  };
                 } else {
-                  state.transform.grabOffset = { x: wPos.x - hh.handlePos.x, y: wPos.y - hh.handlePos.y };
+                  state.transform.grabOffset = {
+                    x: wPos.x - hh.handlePos.x,
+                    y: wPos.y - hh.handlePos.y,
+                  };
                 }
               } else {
                 state.transform.grabOffset = { x: 0, y: 0 };
@@ -6597,58 +6630,139 @@ window.__hbiboInit = function (opts) {
         const MIN_H = 10;
         const c0 = { x: sb.x + sb.w / 2, y: sb.y + sb.h / 2 };
 
-        let pOppLocal;
-        if (isSide) {
-          pOppLocal =
-            idx === 0 ? { x: sb.x + sb.w, y: sb.y + sb.h / 2 } : { x: sb.x, y: sb.y + sb.h / 2 };
-        } else {
-          if (idx === 0) pOppLocal = { x: sb.x + sb.w, y: sb.y + sb.h };
-          else if (idx === 1) pOppLocal = { x: sb.x, y: sb.y + sb.h };
-          else if (idx === 2) pOppLocal = { x: sb.x, y: sb.y };
-          else pOppLocal = { x: sb.x + sb.w, y: sb.y };
-        }
-
-        const pOppWorld = el.rotation
-          ? rotatePoint(pOppLocal.x, pOppLocal.y, c0.x, c0.y, el.rotation)
-          : pOppLocal;
-        const localPointer = el.rotation
-          ? rotatePoint(wPos.x, wPos.y, pOppWorld.x, pOppWorld.y, -el.rotation)
-          : wPos;
-
+        let pOppLocal, pOppWorld;
         let nx = sb.x,
           ny = sb.y,
           nw = sb.w,
           nh = sb.h;
 
-        if (!isSide) {
-          if (idx === 0) {
-            nx = Math.min(localPointer.x, sb.x + sb.w - MIN_W);
-            ny = Math.min(localPointer.y, sb.y + sb.h - MIN_H);
-            nw = sb.x + sb.w - nx;
-            nh = sb.y + sb.h - ny;
-          } else if (idx === 1) {
-            nx = sb.x;
-            ny = Math.min(localPointer.y, sb.y + sb.h - MIN_H);
-            nw = Math.max(localPointer.x, sb.x + MIN_W) - sb.x;
-            nh = sb.y + sb.h - ny;
-          } else if (idx === 2) {
-            nx = sb.x;
-            ny = sb.y;
-            nw = Math.max(localPointer.x, sb.x + MIN_W) - sb.x;
-            nh = Math.max(localPointer.y, sb.y + MIN_H) - sb.y;
+        if (el.rotation) {
+          if (isSide) {
+            pOppLocal =
+              idx === 0
+                ? { x: sb.x + sb.w, y: sb.y + sb.h / 2 }
+                : { x: sb.x, y: sb.y + sb.h / 2 };
           } else {
-            nx = Math.min(localPointer.x, sb.x + sb.w - MIN_W);
-            ny = sb.y;
-            nw = sb.x + sb.w - nx;
-            nh = Math.max(localPointer.y, sb.y + MIN_H) - sb.y;
+            if (idx === 0) pOppLocal = { x: sb.x + sb.w, y: sb.y + sb.h };
+            else if (idx === 1) pOppLocal = { x: sb.x, y: sb.y + sb.h };
+            else if (idx === 2) pOppLocal = { x: sb.x, y: sb.y };
+            else pOppLocal = { x: sb.x + sb.w, y: sb.y };
+          }
+          pOppWorld = rotatePoint(pOppLocal.x, pOppLocal.y, c0.x, c0.y, el.rotation);
+
+          const rot = rotatePoint(
+            wPos.x - pOppWorld.x,
+            wPos.y - pOppWorld.y,
+            0,
+            0,
+            -el.rotation,
+          );
+          const rawLocalMouse = {
+            x: pOppLocal.x + rot.x,
+            y: pOppLocal.y + rot.y,
+          };
+          const grabOff = state.transform.grabOffset || { x: 0, y: 0 };
+          const pad = state.transform.pad || 0;
+          const targetH = {
+            x: rawLocalMouse.x - grabOff.x,
+            y: rawLocalMouse.y - grabOff.y,
+          };
+
+          if (!isSide) {
+            if (idx === 0) {
+              const maxTargetX = sb.x + sb.w - MIN_W - pad;
+              const maxTargetY = sb.y + sb.h - MIN_H - pad;
+              const hx = Math.min(targetH.x, maxTargetX);
+              const hy = Math.min(targetH.y, maxTargetY);
+              nx = hx + pad;
+              ny = hy + pad;
+              nw = sb.x + sb.w - nx;
+              nh = sb.y + sb.h - ny;
+            } else if (idx === 1) {
+              const minTargetX = sb.x + MIN_W + pad;
+              const maxTargetY = sb.y + sb.h - MIN_H - pad;
+              const hx = Math.max(targetH.x, minTargetX);
+              const hy = Math.min(targetH.y, maxTargetY);
+              nx = sb.x;
+              ny = hy + pad;
+              nw = hx - pad - sb.x;
+              nh = sb.y + sb.h - ny;
+            } else if (idx === 2) {
+              const minTargetX = sb.x + MIN_W + pad;
+              const minTargetY = sb.y + MIN_H + pad;
+              const hx = Math.max(targetH.x, minTargetX);
+              const hy = Math.max(targetH.y, minTargetY);
+              nx = sb.x;
+              ny = sb.y;
+              nw = hx - pad - sb.x;
+              nh = hy - pad - sb.y;
+            } else {
+              const maxTargetX = sb.x + sb.w - MIN_W - pad;
+              const minTargetY = sb.y + MIN_H + pad;
+              const hx = Math.min(targetH.x, maxTargetX);
+              const hy = Math.max(targetH.y, minTargetY);
+              nx = hx + pad;
+              ny = sb.y;
+              nw = sb.x + sb.w - nx;
+              nh = hy - pad - sb.y;
+            }
+          } else {
+            if (idx === 0) {
+              const maxTargetX = sb.x + sb.w - MIN_W - pad;
+              const hx = Math.min(targetH.x, maxTargetX);
+              nx = hx + pad;
+              nw = sb.x + sb.w - nx;
+            } else {
+              const minTargetX = sb.x + MIN_W + pad;
+              const hx = Math.max(targetH.x, minTargetX);
+              nx = sb.x;
+              nw = hx - pad - sb.x;
+            }
           }
         } else {
-          if (idx === 0) {
-            nx = Math.min(localPointer.x, sb.x + sb.w - MIN_W);
-            nw = sb.x + sb.w - nx;
+          let pOppLocal;
+          if (isSide) {
+            pOppLocal =
+              idx === 0 ? { x: sb.x + sb.w, y: sb.y + sb.h / 2 } : { x: sb.x, y: sb.y + sb.h / 2 };
           } else {
-            nx = sb.x;
-            nw = Math.max(localPointer.x, sb.x + MIN_W) - sb.x;
+            if (idx === 0) pOppLocal = { x: sb.x + sb.w, y: sb.y + sb.h };
+            else if (idx === 1) pOppLocal = { x: sb.x, y: sb.y + sb.h };
+            else if (idx === 2) pOppLocal = { x: sb.x, y: sb.y };
+            else pOppLocal = { x: sb.x + sb.w, y: sb.y };
+          }
+          const pOppWorld = pOppLocal;
+          const localPointer = wPos;
+
+          if (!isSide) {
+            if (idx === 0) {
+              nx = Math.min(localPointer.x, sb.x + sb.w - MIN_W);
+              ny = Math.min(localPointer.y, sb.y + sb.h - MIN_H);
+              nw = sb.x + sb.w - nx;
+              nh = sb.y + sb.h - ny;
+            } else if (idx === 1) {
+              nx = sb.x;
+              ny = Math.min(localPointer.y, sb.y + sb.h - MIN_H);
+              nw = Math.max(localPointer.x, sb.x + MIN_W) - sb.x;
+              nh = sb.y + sb.h - ny;
+            } else if (idx === 2) {
+              nx = sb.x;
+              ny = sb.y;
+              nw = Math.max(localPointer.x, sb.x + MIN_W) - sb.x;
+              nh = Math.max(localPointer.y, sb.y + MIN_H) - sb.y;
+            } else {
+              nx = Math.min(localPointer.x, sb.x + sb.w - MIN_W);
+              ny = sb.y;
+              nw = sb.x + sb.w - nx;
+              nh = Math.max(localPointer.y, sb.y + MIN_H) - sb.y;
+            }
+          } else {
+            if (idx === 0) {
+              nx = Math.min(localPointer.x, sb.x + sb.w - MIN_W);
+              nw = sb.x + sb.w - nx;
+            } else {
+              nx = sb.x;
+              nw = Math.max(localPointer.x, sb.x + MIN_W) - sb.x;
+            }
           }
         }
 

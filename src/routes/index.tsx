@@ -556,7 +556,9 @@ function HomePage() {
     separateBoards: BoardRecord[];
     rawFiles: File[];
   } | null>(null);
-  const [batchProgress, setBatchProgress] = useState<BatchProgressState | null>(() => globalBatchManager.getProgress());
+  const [batchProgress, setBatchProgress] = useState<BatchProgressState | null>(() =>
+    globalBatchManager.getProgress(),
+  );
   const [batchExpanded, setBatchExpanded] = useState(false);
   const renameRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);

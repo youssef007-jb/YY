@@ -672,7 +672,7 @@ class GlobalBatchManager {
       onItemCompleted?: (board: BoardRecord, item: BatchItem) => void;
       onItemFailed?: (errMsg: string, item: BatchItem) => void;
       onAllFinished?: () => void;
-    } = {}
+    } = {},
   ): BatchConversionQueue {
     if (this.queue && !this.currentProgress?.isFinished) {
       this.queue.cancel();
@@ -734,4 +734,3 @@ class GlobalBatchManager {
 }
 
 export const globalBatchManager = new GlobalBatchManager();
-

@@ -101,6 +101,68 @@ describe("Whiteboard Core Invariants: Clipboard, Resize Handles & Text Alignment
       expect(nx + nw).toBe(300); // Fixed right anchor unchanged!
       expect(ny).toBe(100); // Fixed top anchor unchanged!
     });
+
+    it("should accurately maintain rotated item resize handle anchor without coordinate offset", () => {
+      function rotatePoint(px: number, py: number, ox: number, oy: number, deg: number) {
+        const rad = (deg * Math.PI) / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        const dx = px - ox;
+        const dy = py - oy;
+        return { x: ox + dx * cos - dy * sin, y: oy + dx * sin + dy * cos };
+      }
+
+      const rotEl = { x: 200, y: 100, w: 300, h: 200, rotation: 45 };
+      const c0 = { x: rotEl.x + rotEl.w / 2, y: rotEl.y + rotEl.h / 2 };
+      const pad = 3;
+
+      // Bottom-right corner (idx 2) handle position in local space
+      const handleLocal = { x: rotEl.x + rotEl.w + pad, y: rotEl.y + rotEl.h + pad };
+      const handleWorld = rotatePoint(handleLocal.x, handleLocal.y, c0.x, c0.y, rotEl.rotation);
+
+      // Opposite corner (top-left, idx 0) in local and world space
+      const pOppLocal = { x: rotEl.x, y: rotEl.y };
+      const pOppWorld = rotatePoint(pOppLocal.x, pOppLocal.y, c0.x, c0.y, rotEl.rotation);
+
+      // Mouse clicks directly on handleWorld
+      const mouseWorld = { ...handleWorld };
+      const rot = rotatePoint(mouseWorld.x - pOppWorld.x, mouseWorld.y - pOppWorld.y, 0, 0, -rotEl.rotation);
+      const rawLocalMouse = { x: pOppLocal.x + rot.x, y: pOppLocal.y + rot.y };
+
+      // Grab offset when clicking directly on handle is exactly (0, 0)
+      const grabOffset = { x: rawLocalMouse.x - handleLocal.x, y: rawLocalMouse.y - handleLocal.y };
+      expect(Math.abs(grabOffset.x)).toBeLessThan(1e-6);
+      expect(Math.abs(grabOffset.y)).toBeLessThan(1e-6);
+
+      // When dragging by +50 in world X and +50 in world Y:
+      const movedMouseWorld = { x: handleWorld.x + 50, y: handleWorld.y + 50 };
+      const rotMoved = rotatePoint(movedMouseWorld.x - pOppWorld.x, movedMouseWorld.y - pOppWorld.y, 0, 0, -rotEl.rotation);
+      const targetH = { x: pOppLocal.x + rotMoved.x - grabOffset.x, y: pOppLocal.y + rotMoved.y - grabOffset.y };
+
+      const nw = targetH.x - pad - rotEl.x;
+      const nh = targetH.y - pad - rotEl.y;
+
+      const newLocalCenter = { x: rotEl.x + nw / 2, y: rotEl.y + nh / 2 };
+      const dx = pOppLocal.x - newLocalCenter.x;
+      const dy = pOppLocal.y - newLocalCenter.y;
+      const rotOffset = rotatePoint(dx, dy, 0, 0, rotEl.rotation);
+      const nx = pOppWorld.x - rotOffset.x - nw / 2;
+      const ny = pOppWorld.y - rotOffset.y - nh / 2;
+
+      // The new bottom-right handle rendered in world space
+      const newHandleLocal = { x: nx + nw + pad, y: ny + nh + pad };
+      const newCenter = { x: nx + nw / 2, y: ny + nh / 2 };
+      const newHandleWorld = rotatePoint(newHandleLocal.x, newHandleLocal.y, newCenter.x, newCenter.y, rotEl.rotation);
+
+      // Verify handle world pos exactly matches mouse position
+      expect(Math.abs(newHandleWorld.x - movedMouseWorld.x)).toBeLessThan(1e-5);
+      expect(Math.abs(newHandleWorld.y - movedMouseWorld.y)).toBeLessThan(1e-5);
+
+      // Verify opposite corner remained completely stationary
+      const newOppWorld = rotatePoint(nx, ny, newCenter.x, newCenter.y, rotEl.rotation);
+      expect(Math.abs(newOppWorld.x - pOppWorld.x)).toBeLessThan(1e-5);
+      expect(Math.abs(newOppWorld.y - pOppWorld.y)).toBeLessThan(1e-5);
+    });
   });
 
   describe("Text Snapping & Logical Bounding Box Alignment Invariants", () => {
