@@ -162,7 +162,11 @@ function parseBoundingBox(
 ): { x: number; y: number; w: number; h: number } | null {
   if (!box) return null;
   if (Array.isArray(box) && box.length >= 4) {
-    const [v0, v1, v2, v3] = box.map(Number);
+    const nums = box.map(Number);
+    const v0 = nums[0] ?? NaN;
+    const v1 = nums[1] ?? NaN;
+    const v2 = nums[2] ?? NaN;
+    const v3 = nums[3] ?? NaN;
     if (isNaN(v0) || isNaN(v1) || isNaN(v2) || isNaN(v3)) return null;
 
     let x = 0;
