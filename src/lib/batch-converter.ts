@@ -20,6 +20,7 @@ import {
 } from "./boards-db";
 import {
   prepareImageForAnalysis,
+  prepareDataUrlForAnalysis,
   analyzeWhiteboardImage,
   reconstructWhiteboardElements,
 } from "./image-importer";
@@ -455,21 +456,74 @@ export class BatchConversionQueue {
       return board;
     }
 
-    // 3. PDF Document
+    // 3. PDF Document -> AI Whiteboard Reconstruction
     if (isPdf) {
       item.statusText = "Rendering PDF pages...";
       const pages = await renderPdfToImages(file);
       const cat = autoExtractPhaseAndWeek(item.boardTitle);
-      const elements = pages.map((page, pIdx) => ({
-        id: genBoardId(),
-        type: "image",
-        src: page.src,
-        x: pIdx * (page.w + 40),
-        y: 0,
-        w: page.w,
-        h: page.h,
-        rotation: 0,
-      }));
+      const elements: any[] = [];
+      let currentX = 0;
+
+      for (let pIdx = 0; pIdx < pages.length; pIdx++) {
+        const page = pages[pIdx];
+        item.statusText = `Reconstructing page ${pIdx + 1} of ${pages.length}...`;
+        this.emitProgress();
+
+        try {
+          const prepared = await prepareDataUrlForAnalysis(page.dataUrl);
+          const aiResult = await analyzeWhiteboardImage(
+            {
+              base64: prepared.base64,
+              mimeType: prepared.mimeType,
+              width: prepared.width,
+              height: prepared.height,
+            },
+            (status) => {
+              item.statusText = `Page ${pIdx + 1}/${pages.length}: ${status}`;
+              this.emitProgress();
+            },
+          );
+
+          const reconstructed = reconstructWhiteboardElements(aiResult, prepared.originalImg, {
+            targetCenter: {
+              x: currentX + page.w / 2,
+              y: page.h / 2,
+            },
+          });
+
+          if (reconstructed.elements && reconstructed.elements.length > 0) {
+            elements.push(...reconstructed.elements);
+          } else {
+            elements.push({
+              id: genBoardId(),
+              type: "image",
+              src: page.src,
+              x: currentX,
+              y: 0,
+              w: page.w,
+              h: page.h,
+              rotation: 0,
+            });
+          }
+        } catch (pageErr) {
+          console.warn(
+            `[BatchQueue] Page ${pIdx + 1} vision reconstruction failed, using page image:`,
+            pageErr,
+          );
+          elements.push({
+            id: genBoardId(),
+            type: "image",
+            src: page.src,
+            x: currentX,
+            y: 0,
+            w: page.w,
+            h: page.h,
+            rotation: 0,
+          });
+        }
+
+        currentX += page.w + 60;
+      }
 
       const board: BoardRecord = {
         ...blankBoard(item.boardTitle),

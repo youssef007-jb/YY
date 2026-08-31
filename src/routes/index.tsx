@@ -269,7 +269,6 @@ function BoardThumbnail({ board }: { board: BoardRecord }) {
       generateBoardThumbnail(board).then((dataUrl) => {
         if (isMounted && dataUrl) {
           setThumbSrc(dataUrl);
-          // Persist generated thumbnail back to DB asynchronously so future renders are instant
           void putBoard({ ...board, thumb: dataUrl });
         }
       });
@@ -278,7 +277,7 @@ function BoardThumbnail({ board }: { board: BoardRecord }) {
       };
     }
     return undefined;
-  }, [board.id, board.thumb, board.updatedAt, elements.length]);
+  }, [board, elements.length]);
 
   if (thumbSrc) {
     return (
@@ -592,20 +591,23 @@ function HomePage() {
     if (renaming) renameRef.current?.focus();
   }, [renaming]);
 
-  const openBoard = async (id: string, boardRecord?: BoardRecord) => {
-    setError(null);
-    const target = boardRecord || (boards ? boards.find((b) => b.id === id) : null);
-    if (target) {
-      const updated = { ...target, updatedAt: Date.now() };
-      setWorkspaceBoardPayload(updated);
-      try {
-        await putBoard(updated);
-      } catch (err) {
-        console.warn("Failed to update board timestamp", err);
+  const openBoard = useCallback(
+    async (id: string, boardRecord?: BoardRecord) => {
+      setError(null);
+      const target = boardRecord || (boards ? boards.find((b) => b.id === id) : null);
+      if (target) {
+        const updated = { ...target, updatedAt: Date.now() };
+        setWorkspaceBoardPayload(updated);
+        try {
+          await putBoard(updated);
+        } catch (err) {
+          console.warn("Failed to update board timestamp", err);
+        }
       }
-    }
-    navigate({ to: "/board/$boardId", params: { boardId: id } });
-  };
+      navigate({ to: "/board/$boardId", params: { boardId: id } });
+    },
+    [boards, navigate],
+  );
 
   const handleCreate = async () => {
     if (busy) return;
@@ -620,7 +622,7 @@ function HomePage() {
     }
   };
 
-  const handleDownload = async (b: BoardRecord) => {
+  const handleDownload = useCallback(async (b: BoardRecord) => {
     try {
       const elements = (b.elements || []) as any[];
       const pad = 60;
@@ -858,7 +860,7 @@ function HomePage() {
     } catch {
       setError("Could not export board to PNG.");
     }
-  };
+  }, []);
 
   const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     setError(null);
@@ -1250,15 +1252,18 @@ function HomePage() {
     }
   };
 
-  const commitRename = async (id: string) => {
-    setRenaming(null);
-    try {
-      await renameBoard(id, renameValue);
-      await refresh();
-    } catch {
-      setError("Could not rename that board.");
-    }
-  };
+  const commitRename = useCallback(
+    async (id: string) => {
+      setRenaming(null);
+      try {
+        await renameBoard(id, renameValue);
+        await refresh();
+      } catch {
+        setError("Could not rename that board.");
+      }
+    },
+    [renameValue, refresh],
+  );
 
   const commitDetails = async () => {
     if (!editingDetails) return;
@@ -1372,7 +1377,7 @@ function HomePage() {
       },
       renameRef,
     }),
-    [renaming, renameValue, refresh, selectedIds],
+    [renaming, renameValue, refresh, selectedIds, commitRename, openBoard, handleDownload],
   );
 
   const totalCount = boards?.length ?? 0;

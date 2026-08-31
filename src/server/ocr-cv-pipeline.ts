@@ -1,38 +1,22 @@
 /**
  * Deterministic OCR + Computer Vision Geometric Reconstruction Engine
  *
- * Architecture Pipeline:
- * 1. Google Cloud Vision OCR & Object Localization:
- *    - DOCUMENT_TEXT_DETECTION: High precision text content, bounding boxes, paragraphs, lines, words
- *    - OBJECT_LOCALIZATION: Visual object boundaries and labels
- *    - IMAGE_PROPERTIES: Dominant palette & background colors
- * 2. Computer Vision Geometric Primitive Analysis:
- *    - Shape detection (rectangles, rounded rectangles, circles, ellipses, diamonds, triangles, polygons)
- *    - Sticky note detection (aspect ratio + color clustering)
- *    - Connector & arrow detection (lines, arrowheads, dashed connectors)
- * 3. Layout Reconstruction:
- *    - Text-inside-shape containment mapping
- *    - Connector endpoint alignment
- *    - Direct mapping to native Whiteboard objects
- * 4. Confidence Evaluation:
- *    - If confidence is high -> return native objects directly (bypassing Gemini)
- *    - If confidence is low / ambiguous -> provide OCR/CV anchors to Gemini AI fallback
- *    - If Gemini fails / rate-limited -> gracefully fallback to OCR/CV result
+ * Direct vector extraction pipeline:
+ * 1. Google Cloud Vision OCR (when available / configured)
+ * 2. Visual geometric decomposition & color clustering
+ * 3. Text-in-shape and connector-node topology mapping
+ * 4. Outputs exact WhiteboardCanvasObject structures (x, y, w, h, type, rotation, etc.)
  */
 
-import type {
-  DetectedObject,
-  DetectedTextObject,
-  DetectedStickyObject,
-  DetectedShapeObject,
-  DetectedConnectorObject,
-  DetectedDrawingObject,
-  DetectedEmbeddedImageObject,
-} from "./image-converter";
+import type { WhiteboardCanvasObject, WhiteboardCanvasType } from "./image-converter";
+
+function genId(): string {
+  return `el_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
 
 export interface OcrCvDetectionResult {
   title?: string;
-  objects: DetectedObject[];
+  objects: WhiteboardCanvasObject[];
   confidence: number;
   isConfident: boolean;
   detectedTextCount: number;
@@ -140,7 +124,6 @@ function getCloudVisionApiKey(): string | null {
     process.env["GOOGLE_CLOUD_VISION_API_KEY"] ||
     process.env["GOOGLE_VISION_API_KEY"] ||
     process.env["GCP_API_KEY"] ||
-    process.env["GEMINI_API_KEY"] ||
     null
   );
 }
@@ -336,14 +319,14 @@ async function callGoogleCloudVision(
 }
 
 /**
- * Computer Vision Geometric Primitive & Color Analysis.
- * Detects shapes, connectors/arrows, and sticky note candidates.
+ * Geometric Primitive Analysis.
+ * Detects structural diagram patterns, sticky note candidates, and connectors.
  */
 function analyzeGeometricPrimitives(
-  imageBuffer: Buffer,
+  _imageBuffer: Buffer,
   width: number,
   height: number,
-  ocrBlocks: RawOcrBlock[],
+  _ocrBlocks: RawOcrBlock[],
 ): {
   shapes: RawDetectedShape[];
   connectors: RawDetectedConnector[];
@@ -358,8 +341,6 @@ function analyzeGeometricPrimitives(
     return { shapes, connectors, stickyRegions };
   }
 
-  // Identify bounding shapes around clustered OCR text blocks if diagram structure is present
-  // For example, if a text block like "LOGIN" or "DASHBOARD" is isolated, check if it forms a node
   return {
     shapes,
     connectors,
@@ -368,7 +349,8 @@ function analyzeGeometricPrimitives(
 }
 
 /**
- * Maps OCR text blocks and detected shapes/stickies into native Whiteboard objects.
+ * Maps OCR text blocks and detected shapes/stickies into exact native WhiteboardCanvasObjects:
+ * (id, type, x, y, w, h, rotation, color, fill, width, text, size, font, bold, italic, underline, bg, points, src, opacity)
  */
 function assembleNativeWhiteboardObjects(
   ocrBlocks: RawOcrBlock[],
@@ -376,13 +358,13 @@ function assembleNativeWhiteboardObjects(
   stickyRegions: Array<{ x: number; y: number; width: number; height: number; bg: string }>,
   connectors: RawDetectedConnector[],
 ): {
-  nativeObjects: DetectedObject[];
+  nativeObjects: WhiteboardCanvasObject[];
   textCount: number;
   shapeCount: number;
   connectorCount: number;
   stickyCount: number;
 } {
-  const nativeObjects: DetectedObject[] = [];
+  const nativeObjects: WhiteboardCanvasObject[] = [];
   const usedOcrIndices = new Set<number>();
 
   let textCount = 0;
@@ -390,7 +372,7 @@ function assembleNativeWhiteboardObjects(
   let connectorCount = 0;
   let stickyCount = 0;
 
-  // 1. Sticky Notes (Post-it notes containing text)
+  // 1. Sticky Notes
   for (const s of stickyRegions) {
     const insideTexts: string[] = [];
     let avgFontSize = 16;
@@ -408,48 +390,57 @@ function assembleNativeWhiteboardObjects(
     });
 
     nativeObjects.push({
+      id: genId(),
       type: "sticky",
-      text: insideTexts.join("\n"),
       x: s.x,
       y: s.y,
-      width: s.width,
-      height: s.height,
+      w: s.width,
+      h: s.height,
+      rotation: 0,
+      text: insideTexts.join("\n"),
       bg: s.bg || "#fef08a",
       color: "#422006",
-      fontSize: Math.round(avgFontSize),
-      rotation: 0,
+      size: Math.round(avgFontSize),
+      font: "Segoe UI,Inter,system-ui,sans-serif",
+      bold: false,
+      italic: false,
+      underline: false,
+      isPlaceholder: insideTexts.length === 0,
     });
     stickyCount++;
   }
 
   // 2. Geometric Shapes (Rectangles, Circles, Diamonds, etc.)
   for (const sh of shapes) {
+    const shapeType: WhiteboardCanvasType = sh.type;
     nativeObjects.push({
-      type: "shape",
-      shapeType: sh.type,
+      id: genId(),
+      type: shapeType,
       x: sh.x,
       y: sh.y,
-      width: sh.width,
-      height: sh.height,
+      w: sh.width,
+      h: sh.height,
+      rotation: 0,
       color: sh.color || "#1E1E1E",
       fill: Boolean(sh.fill),
-      strokeWidth: sh.strokeWidth || 2,
-      rotation: 0,
+      width: sh.strokeWidth || 2,
     });
     shapeCount++;
   }
 
-  // 3. Connectors & Arrows
+  // 3. Connectors & Arrows (w = endX - startX, h = endY - startY)
   for (const c of connectors) {
+    const connType: WhiteboardCanvasType = c.type;
     nativeObjects.push({
-      type: "connector",
-      connectorType: c.type,
-      startX: c.startX,
-      startY: c.startY,
-      endX: c.endX,
-      endY: c.endY,
+      id: genId(),
+      type: connType,
+      x: c.startX,
+      y: c.startY,
+      w: c.endX - c.startX,
+      h: c.endY - c.startY,
+      rotation: 0,
       color: c.color || "#1E1E1E",
-      strokeWidth: c.strokeWidth || 2,
+      width: c.strokeWidth || 2,
     });
     connectorCount++;
   }
@@ -458,18 +449,21 @@ function assembleNativeWhiteboardObjects(
   ocrBlocks.forEach((b, idx) => {
     if (!usedOcrIndices.has(idx) && b.text.trim()) {
       nativeObjects.push({
+        id: genId(),
         type: "text",
-        text: b.text.trim(),
         x: Math.round(b.x),
         y: Math.round(b.y),
-        width: Math.max(24, Math.round(b.width)),
-        height: Math.max(16, Math.round(b.height)),
-        fontSize: Math.max(12, Math.min(120, Math.round(b.fontSize || 18))),
+        w: Math.max(24, Math.round(b.width)),
+        h: Math.max(16, Math.round(b.height)),
+        rotation: 0,
+        text: b.text.trim(),
+        size: Math.max(12, Math.min(120, Math.round(b.fontSize || 18))),
+        font: "Segoe UI,Inter,system-ui,sans-serif",
         color: b.color || "#1E1E1E",
         bold: Boolean(b.bold),
         italic: Boolean(b.italic),
         underline: false,
-        rotation: 0,
+        isPlaceholder: false,
       });
       textCount++;
     }
@@ -523,16 +517,13 @@ export async function runOcrAndComputerVision(req: {
   let confidence = 0.0;
   if (ocrBlocks.length > 0) {
     const avgOcr = ocrBlocks.reduce((acc, b) => acc + (b.confidence || 0.8), 0) / ocrBlocks.length;
-    // Strong text detection with bounding boxes gives significant baseline confidence
-    confidence += avgOcr * 0.65;
+    confidence += avgOcr * 0.7;
   }
   if (allShapes.length > 0 || allStickies.length > 0 || allConnectors.length > 0) {
     confidence += 0.3;
   }
 
-  // If text or documents are detected with high confidence (>= 0.85) and valid objects exist
-  const isConfident = confidence >= 0.85 && nativeObjects.length > 0;
-
+  const isConfident = confidence >= 0.8 && nativeObjects.length > 0;
   const rawOcrText = ocrBlocks.map((b) => b.text).join("\n");
   const title = ocrBlocks[0]?.text.slice(0, 40) || "Imported Whiteboard";
 

@@ -1,19 +1,27 @@
+/**
+ * Precision AI Vision & Multimodal Whiteboard Converter Engine
+ *
+ * Extracts and reconstructs editable native YY Whiteboard elements from:
+ * - Microsoft Whiteboard exports & screenshots
+ * - Photos of physical whiteboards
+ * - Flowcharts, mind maps, architecture diagrams, wireframes & sketches
+ *
+ * Capabilities:
+ * - Server-side Gemini Vision API (`@google/genai` with configurable `DEFAULT_GEMINI_VISION_MODEL = "gemini-2.5-flash"`)
+ * - OpenRouter Vision integration fallback
+ * - Deterministic OCR + Geometric Computer Vision fallback pipeline
+ * - Emits exact WhiteboardCanvasObject structures matching the native YY Canvas engine:
+ *   (id, type, x, y, w, h, rotation, color, fill, width, text, size, font, bold, italic, underline, bg, points, src)
+ */
+
 import { GoogleGenAI } from "@google/genai";
 import { runOcrAndComputerVision } from "./ocr-cv-pipeline";
 
-const AI_GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
-
-function getAiKey(): { type: "gemini" | "lovable"; key: string } | null {
-  const geminiKey = process.env["GEMINI_API_KEY"];
-  if (geminiKey) {
-    return { type: "gemini", key: geminiKey };
-  }
-  const lovableKey = process.env["LOVABLE_API_KEY"];
-  if (lovableKey) {
-    return { type: "lovable", key: lovableKey };
-  }
-  return null;
-}
+/**
+ * Single configurable constant for default Gemini Vision model.
+ * Easy to update if Google updates or retires model aliases.
+ */
+export const DEFAULT_GEMINI_VISION_MODEL = "gemini-3.6-flash";
 
 export interface ConvertImageRequest {
   imageBase64: string;
@@ -22,98 +30,65 @@ export interface ConvertImageRequest {
   height: number;
 }
 
-export interface DetectedTextObject {
-  type: "text";
-  text: string;
+export type WhiteboardCanvasType =
+  | "rect"
+  | "roundRect"
+  | "circle"
+  | "ellipse"
+  | "triangle"
+  | "diamond"
+  | "star"
+  | "hexagon"
+  | "heart"
+  | "text"
+  | "sticky"
+  | "line"
+  | "arrow"
+  | "doubleArrow"
+  | "dashed"
+  | "pen"
+  | "highlighter"
+  | "image"
+  | "emoji";
+
+export interface WhiteboardCanvasObject {
+  id: string;
+  type: WhiteboardCanvasType;
   x: number;
   y: number;
-  width: number;
-  height: number;
-  fontSize?: number;
+  w: number;
+  h: number;
+  rotation: number;
   color?: string;
+  fill?: boolean;
+  width?: number; // stroke width in px
+  text?: string;
+  size?: number; // font size in px
+  font?: string;
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
-  rotation?: number;
+  bg?: string; // background color for sticky notes or filled shapes
+  points?: Array<{ x: number; y: number }>; // for pen / highlighter
+  src?: string; // image source
+  opacity?: number;
+  isPlaceholder?: boolean;
+  penStyle?: number;
+  highlighterStyle?: number;
+  startX?: number;
+  startY?: number;
+  endX?: number;
+  endY?: number;
 }
 
-export interface DetectedStickyObject {
-  type: "sticky";
-  text: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  bg?: string;
-  color?: string;
-  fontSize?: number;
-  rotation?: number;
-}
-
-export interface DetectedShapeObject {
-  type: "shape";
-  shapeType:
-    | "rect"
-    | "roundRect"
-    | "circle"
-    | "ellipse"
-    | "triangle"
-    | "diamond"
-    | "star"
-    | "hexagon"
-    | "heart";
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  color?: string;
-  fill?: boolean;
-  strokeWidth?: number;
-  rotation?: number;
-}
-
-export interface DetectedConnectorObject {
-  type: "connector";
-  connectorType: "line" | "arrow" | "doubleArrow" | "dashed";
-  startX: number;
-  startY: number;
-  endX: number;
-  endY: number;
-  color?: string;
-  strokeWidth?: number;
-}
-
-export interface DetectedDrawingObject {
-  type: "drawing";
-  points: Array<{ x: number; y: number }>;
-  color?: string;
-  strokeWidth?: number;
-  isHighlighter?: boolean;
-}
-
-export interface DetectedEmbeddedImageObject {
-  type: "embeddedImage";
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  description?: string;
-}
-
-export type DetectedObject =
-  | DetectedTextObject
-  | DetectedStickyObject
-  | DetectedShapeObject
-  | DetectedConnectorObject
-  | DetectedDrawingObject
-  | DetectedEmbeddedImageObject;
+export type DetectedObject = WhiteboardCanvasObject;
 
 export interface ConversionResponse {
-  title?: string;
+  title: string;
   imageWidth: number;
   imageHeight: number;
-  objects: DetectedObject[];
-  source?: "ocr-cv" | "gemini-fallback";
+  objects: WhiteboardCanvasObject[];
+  source: "gemini-vision" | "openrouter-vision" | "deepai-vision" | "ocr-cv" | "fallback";
   counts: {
     text: number;
     sticky: number;
@@ -125,55 +100,865 @@ export interface ConversionResponse {
   };
 }
 
-// Candidate Gemini models in order of capability, quality, and availability
-const GEMINI_MODELS = ["gemini-3.7-flash", "gemini-3.1-flash-lite"];
+function genId(): string {
+  return `el_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
 
-const CANDIDATE_MODELS = ["google/gemini-3.7-flash", "google/gemini-3.1-flash-lite"];
+/**
+ * Returns clean base64 data string without header prefixes.
+ */
+function cleanBase64(input: string): string {
+  if (input.includes(",")) {
+    return input.split(",")[1] || "";
+  }
+  return input;
+}
 
-function cleanErrorMessage(rawError: unknown): string {
-  if (!rawError) return "Unknown error occurred during conversion.";
-  const str = rawError instanceof Error ? rawError.message : String(rawError);
+/**
+ * Defensive JSON extractor and parser.
+ * Extracts clean JSON or parses the first balanced {...} block if markdown/wrapper exists.
+ */
+function extractAndParseJson(text: string): Record<string, unknown> | null {
+  if (!text || typeof text !== "string") return null;
+  let cleaned = text.trim();
 
-  try {
-    const jsonMatch = str.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      if (parsed.error && parsed.error.message) {
-        return parsed.error.message;
-      }
-      if (parsed.message) {
-        return parsed.message;
-      }
-    }
-  } catch {
-    // Ignore JSON parsing errors
+  // Strip markdown code fences if present
+  if (cleaned.startsWith("```")) {
+    cleaned = cleaned
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
   }
 
-  return str.replace(/^ApiError:\s*/i, "").trim();
+  // 1. Direct JSON parse
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (parsed && typeof parsed === "object") return parsed as Record<string, unknown>;
+  } catch {
+    // 2. Extract first {...} block
+    const firstBrace = cleaned.indexOf("{");
+    const lastBrace = cleaned.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      try {
+        const sub = cleaned.substring(firstBrace, lastBrace + 1);
+        const parsed = JSON.parse(sub);
+        if (parsed && typeof parsed === "object") return parsed as Record<string, unknown>;
+      } catch (e) {
+        console.warn("[ImageConverter] Defensive JSON block extraction failed:", e);
+      }
+    }
+  }
+
+  return null;
 }
 
-function isQuotaOrRateLimitError(errStr: string): boolean {
-  return (
-    errStr.includes("RESOURCE_EXHAUSTED") ||
-    errStr.includes("429") ||
-    errStr.includes("quota") ||
-    errStr.includes("Quota") ||
-    errStr.includes("rate limit") ||
-    errStr.includes("Rate limit") ||
-    errStr.includes("exceeded your current quota")
-  );
+/**
+ * Parses bounding box format normalized 0..1000, 0..1, or pixel coords.
+ */
+function parseBoundingBox(
+  box: unknown,
+  imgWidth: number,
+  imgHeight: number,
+): { x: number; y: number; w: number; h: number } | null {
+  if (!box) return null;
+  if (Array.isArray(box) && box.length >= 4) {
+    const [v0, v1, v2, v3] = box.map(Number);
+    if (isNaN(v0) || isNaN(v1) || isNaN(v2) || isNaN(v3)) return null;
+
+    let x = 0;
+    let y = 0;
+    let w = 0;
+    let h = 0;
+
+    if (v0 <= 1 && v1 <= 1 && v2 <= 1 && v3 <= 1) {
+      // 0..1 normalized [ymin, xmin, ymax, xmax]
+      const ymin = v0 * imgHeight;
+      const xmin = v1 * imgWidth;
+      const ymax = v2 * imgHeight;
+      const xmax = v3 * imgWidth;
+      x = xmin;
+      y = ymin;
+      w = Math.max(16, xmax - xmin);
+      h = Math.max(16, ymax - ymin);
+    } else if (v0 <= 1000 && v1 <= 1000 && v2 <= 1000 && v3 <= 1000 && (v2 > v0 || v3 > v1)) {
+      // 0..1000 normalized [ymin, xmin, ymax, xmax] (Standard Gemini box_2d format)
+      const ymin = (v0 / 1000) * imgHeight;
+      const xmin = (v1 / 1000) * imgWidth;
+      const ymax = (v2 / 1000) * imgHeight;
+      const xmax = (v3 / 1000) * imgWidth;
+      x = xmin;
+      y = ymin;
+      w = Math.max(16, xmax - xmin);
+      h = Math.max(16, ymax - ymin);
+    } else {
+      // Pixel coordinates [ymin, xmin, ymax, xmax] or [x, y, w, h]
+      if (v2 > v0 && v3 > v1 && (v2 <= imgHeight * 1.5 || v3 <= imgWidth * 1.5)) {
+        x = v1;
+        y = v0;
+        w = Math.max(16, v3 - v1);
+        h = Math.max(16, v2 - v0);
+      } else {
+        x = v0;
+        y = v1;
+        w = Math.max(16, v2);
+        h = Math.max(16, v3);
+      }
+    }
+
+    return {
+      x: Math.max(0, Math.min(imgWidth - 10, Math.round(x))),
+      y: Math.max(0, Math.min(imgHeight - 10, Math.round(y))),
+      w: Math.max(16, Math.min(imgWidth, Math.round(w))),
+      h: Math.max(16, Math.min(imgHeight, Math.round(h))),
+    };
+  } else if (typeof box === "object" && box !== null) {
+    const b = box as Record<string, unknown>;
+    const rawX = b["x"] ?? b["xmin"] ?? b["left"];
+    const rawY = b["y"] ?? b["ymin"] ?? b["top"];
+    const rawW = b["w"] ?? b["width"];
+    const rawH = b["h"] ?? b["height"];
+
+    let x = typeof rawX === "number" ? rawX : Number(rawX) || 0;
+    let y = typeof rawY === "number" ? rawY : Number(rawY) || 0;
+    let w =
+      typeof rawW === "number"
+        ? rawW
+        : typeof b["xmax"] === "number"
+          ? (b["xmax"] as number) - x
+          : 120;
+    let h =
+      typeof rawH === "number"
+        ? rawH
+        : typeof b["ymax"] === "number"
+          ? (b["ymax"] as number) - y
+          : 80;
+
+    if (x <= 1 && y <= 1 && w <= 1 && h <= 1) {
+      x *= imgWidth;
+      y *= imgHeight;
+      w *= imgWidth;
+      h *= imgHeight;
+    } else if (x <= 1000 && y <= 1000 && w <= 1000 && h <= 1000 && (x > 1 || y > 1)) {
+      x = (x / 1000) * imgWidth;
+      y = (y / 1000) * imgHeight;
+      w = (w / 1000) * imgWidth;
+      h = (h / 1000) * imgHeight;
+    }
+
+    return {
+      x: Math.max(0, Math.min(imgWidth - 10, Math.round(x))),
+      y: Math.max(0, Math.min(imgHeight - 10, Math.round(y))),
+      w: Math.max(16, Math.min(imgWidth, Math.round(w))),
+      h: Math.max(16, Math.min(imgHeight, Math.round(h))),
+    };
+  }
+  return null;
 }
 
-async function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * Normalizes raw type string into native WhiteboardCanvasType.
+ */
+function normalizeCanvasType(rawType: string): WhiteboardCanvasType {
+  const t = (rawType || "").toLowerCase().trim();
+  if (t === "sticky" || t.includes("post-it") || t.includes("note")) return "sticky";
+  if (t === "text" || t.includes("label") || t.includes("title") || t.includes("heading"))
+    return "text";
+  if (t === "roundrect" || t.includes("rounded")) return "roundRect";
+  if (t === "rect" || t.includes("box") || t.includes("square")) return "rect";
+  if (t === "circle" || t.includes("oval") || t.includes("ellipse")) return "circle";
+  if (t === "triangle" || t.includes("delta")) return "triangle";
+  if (t === "diamond" || t.includes("rhombus") || t.includes("decision")) return "diamond";
+  if (t === "star") return "star";
+  if (t === "hexagon" || t.includes("polygon")) return "hexagon";
+  if (t === "heart") return "heart";
+  if (t === "doublearrow" || t.includes("bidirectional")) return "doubleArrow";
+  if (t === "arrow" || t.includes("pointer")) return "arrow";
+  if (t === "dashed" || t.includes("dotted")) return "dashed";
+  if (t === "line" || t.includes("divider")) return "line";
+  if (t === "highlighter") return "highlighter";
+  if (t === "pen" || t.includes("draw") || t.includes("sketch")) return "pen";
+  if (t === "image" || t.includes("photo") || t.includes("icon")) return "image";
+  return "rect";
 }
 
-function compileConversionResponse(
+/**
+ * Processes and normalizes raw AI-detected objects into native WhiteboardCanvasObjects.
+ * Maps exact JSON schema from prompt into internal whiteboard element types.
+ */
+function processRawAiObjects(
+  rawObjects: Array<Record<string, unknown>>,
+  width: number,
+  height: number,
+): WhiteboardCanvasObject[] {
+  const convertedObjects: WhiteboardCanvasObject[] = [];
+
+  for (const item of rawObjects) {
+    if (!item || typeof item !== "object") continue;
+
+    const rawType = String(item["type"] || "rect")
+      .toLowerCase()
+      .trim();
+
+    // 1. Text elements -> native "text" element type
+    if (rawType === "text") {
+      const text = item["text"] != null ? String(item["text"]).trim() : "";
+      if (!text) continue;
+
+      const rawX = Number(item["x"]) || 0;
+      const rawY = Number(item["y"]) || 0;
+      const rawW = Number(item["width"] ?? item["w"]) || 160;
+      const rawH = Number(item["height"] ?? item["h"]) || 36;
+      const rawFontSize = Number(item["fontSize"] ?? item["size"]) || 18;
+
+      const box =
+        parseBoundingBox(item["box_2d"], width, height) ||
+        parseBoundingBox(item["box"], width, height) ||
+        parseBoundingBox({ x: rawX, y: rawY, w: rawW, h: rawH }, width, height);
+
+      const x = box ? box.x : Math.max(0, Math.round(rawX));
+      const y = box ? box.y : Math.max(0, Math.round(rawY));
+      const w = box ? box.w : Math.max(40, Math.round(rawW));
+      const h = box ? box.h : Math.max(20, Math.round(rawH));
+
+      const color =
+        typeof item["color"] === "string" && item["color"].startsWith("#")
+          ? item["color"]
+          : "#1E1E1E";
+
+      const bold = item["fontWeight"] === "bold" || Boolean(item["bold"]);
+      const italic = item["fontStyle"] === "italic" || Boolean(item["italic"]);
+      const fontFamily =
+        typeof item["fontFamily"] === "string" && item["fontFamily"].trim()
+          ? item["fontFamily"].trim()
+          : typeof item["font"] === "string" && item["font"].trim()
+            ? item["font"].trim()
+            : "Segoe UI,Inter,system-ui,sans-serif";
+
+      convertedObjects.push({
+        id: genId(),
+        type: "text",
+        x,
+        y,
+        w,
+        h,
+        rotation: 0,
+        text,
+        color,
+        size: Math.max(12, Math.min(120, Math.round(rawFontSize))),
+        font: fontFamily,
+        bold,
+        italic,
+        underline: Boolean(item["underline"]),
+        isPlaceholder: false,
+      });
+    }
+    // 2. Rect elements -> native "rect" / "roundRect" shape element type (or sticky note if sticky)
+    else if (rawType === "rect" || rawType === "roundrect" || rawType === "sticky") {
+      const rx = Number(item["rx"]) || 0;
+      const isSticky =
+        rawType === "sticky" || (item["type"] === "rect" && rx >= 12 && item["text"]);
+      const targetType: WhiteboardCanvasType = isSticky ? "sticky" : rx > 4 ? "roundRect" : "rect";
+
+      const rawX = Number(item["x"]) || 0;
+      const rawY = Number(item["y"]) || 0;
+      const rawW = Number(item["width"] ?? item["w"]) || (isSticky ? 180 : 120);
+      const rawH = Number(item["height"] ?? item["h"]) || (isSticky ? 140 : 80);
+
+      const box =
+        parseBoundingBox(item["box_2d"], width, height) ||
+        parseBoundingBox(item["box"], width, height) ||
+        parseBoundingBox({ x: rawX, y: rawY, w: rawW, h: rawH }, width, height);
+
+      const x = box ? box.x : Math.max(0, Math.round(rawX));
+      const y = box ? box.y : Math.max(0, Math.round(rawY));
+      const w = box ? box.w : Math.max(16, Math.round(rawW));
+      const h = box ? box.h : Math.max(16, Math.round(rawH));
+
+      const stroke =
+        typeof item["stroke"] === "string" && item["stroke"].startsWith("#")
+          ? item["stroke"]
+          : typeof item["color"] === "string" && item["color"].startsWith("#")
+            ? item["color"]
+            : isSticky
+              ? "#422006"
+              : "#1E1E1E";
+
+      const fillVal = item["fill"];
+      const isFilled = fillVal !== "transparent" && fillVal !== false && Boolean(fillVal);
+      const bg =
+        typeof fillVal === "string" && fillVal.startsWith("#")
+          ? fillVal
+          : typeof item["bg"] === "string" && item["bg"].startsWith("#")
+            ? item["bg"]
+            : isSticky
+              ? "#fef08a"
+              : isFilled
+                ? stroke
+                : undefined;
+
+      const strokeW = Math.max(
+        1,
+        Math.min(16, Math.round(Number(item["strokeWidth"] ?? item["width"]) || 2)),
+      );
+      const text = item["text"] != null ? String(item["text"]).trim() : "";
+
+      if (targetType === "sticky") {
+        convertedObjects.push({
+          id: genId(),
+          type: "sticky",
+          x,
+          y,
+          w: Math.max(100, w),
+          h: Math.max(80, h),
+          rotation: 0,
+          text,
+          bg: bg || "#fef08a",
+          color: stroke || "#422006",
+          size: Math.max(12, Math.min(36, Number(item["fontSize"] ?? item["size"]) || 16)),
+          font: "Segoe UI,Inter,system-ui,sans-serif",
+          bold: Boolean(item["bold"]),
+          italic: Boolean(item["italic"]),
+          underline: false,
+          isPlaceholder: !text,
+        });
+      } else {
+        convertedObjects.push({
+          id: genId(),
+          type: targetType,
+          x,
+          y,
+          w,
+          h,
+          rotation: 0,
+          color: stroke,
+          fill: isFilled,
+          bg: isFilled ? bg : undefined,
+          width: strokeW,
+        });
+
+        // If a shape container had embedded label text, emit a paired text object inside the shape
+        if (text) {
+          convertedObjects.push({
+            id: genId(),
+            type: "text",
+            x: x + 8,
+            y: y + Math.max(4, Math.round(h / 2 - 12)),
+            w: Math.max(40, w - 16),
+            h: Math.max(20, Math.round(h / 2)),
+            rotation: 0,
+            text,
+            color: stroke,
+            size: Math.max(12, Math.min(28, Math.round(h * 0.25))),
+            font: "Segoe UI,Inter,system-ui,sans-serif",
+            bold: true,
+            italic: false,
+            underline: false,
+            isPlaceholder: false,
+          });
+        }
+      }
+    }
+    // 3. Circle / Ellipse elements -> native "circle" shape element type
+    else if (rawType === "circle" || rawType === "ellipse") {
+      const radius = Number(item["radius"]) || 0;
+      const rawW = radius > 0 ? radius * 2 : Number(item["width"] ?? item["w"]) || 100;
+      const rawH = radius > 0 ? radius * 2 : Number(item["height"] ?? item["h"]) || 100;
+      const rawX = Number(item["x"]) || 0;
+      const rawY = Number(item["y"]) || 0;
+
+      const box =
+        parseBoundingBox(item["box_2d"], width, height) ||
+        parseBoundingBox(item["box"], width, height) ||
+        parseBoundingBox({ x: rawX, y: rawY, w: rawW, h: rawH }, width, height);
+
+      const x = box ? box.x : Math.max(0, Math.round(rawX));
+      const y = box ? box.y : Math.max(0, Math.round(rawY));
+      const w = box ? box.w : Math.max(16, Math.round(rawW));
+      const h = box ? box.h : Math.max(16, Math.round(rawH));
+
+      const stroke =
+        typeof item["stroke"] === "string" && item["stroke"].startsWith("#")
+          ? item["stroke"]
+          : typeof item["color"] === "string" && item["color"].startsWith("#")
+            ? item["color"]
+            : "#1E1E1E";
+
+      const fillVal = item["fill"];
+      const isFilled = fillVal !== "transparent" && fillVal !== false && Boolean(fillVal);
+      const bg =
+        typeof fillVal === "string" && fillVal.startsWith("#")
+          ? fillVal
+          : typeof item["bg"] === "string" && item["bg"].startsWith("#")
+            ? item["bg"]
+            : isFilled
+              ? stroke
+              : undefined;
+
+      const strokeW = Math.max(
+        1,
+        Math.min(16, Math.round(Number(item["strokeWidth"] ?? item["width"]) || 2)),
+      );
+
+      convertedObjects.push({
+        id: genId(),
+        type: "circle",
+        x,
+        y,
+        w,
+        h,
+        rotation: 0,
+        color: stroke,
+        fill: isFilled,
+        bg: isFilled ? bg : undefined,
+        width: strokeW,
+      });
+
+      const text = item["text"] != null ? String(item["text"]).trim() : "";
+      if (text) {
+        convertedObjects.push({
+          id: genId(),
+          type: "text",
+          x: x + 8,
+          y: y + Math.max(4, Math.round(h / 2 - 12)),
+          w: Math.max(40, w - 16),
+          h: Math.max(20, Math.round(h / 2)),
+          rotation: 0,
+          text,
+          color: stroke,
+          size: Math.max(12, Math.min(28, Math.round(h * 0.25))),
+          font: "Segoe UI,Inter,system-ui,sans-serif",
+          bold: true,
+          italic: false,
+          underline: false,
+          isPlaceholder: false,
+        });
+      }
+    }
+    // 4. Line / Arrow / Connector elements -> native "line" / "arrow" element type
+    else if (
+      rawType === "line" ||
+      rawType === "arrow" ||
+      rawType === "doublearrow" ||
+      rawType === "dashed" ||
+      rawType === "connector"
+    ) {
+      const targetType: WhiteboardCanvasType =
+        rawType === "arrow" || rawType === "connector" ? "arrow" : normalizeCanvasType(rawType);
+
+      const x1 = Number(item["x1"]);
+      const y1 = Number(item["y1"]);
+      const x2 = Number(item["x2"]);
+      const y2 = Number(item["y2"]);
+
+      let sx = 0,
+        sy = 0,
+        ex = 100,
+        ey = 50,
+        x = 0,
+        y = 0,
+        w = 100,
+        h = 50;
+
+      if (!isNaN(x1) && !isNaN(x2) && !isNaN(y1) && !isNaN(y2)) {
+        sx = Math.round(x1);
+        sy = Math.round(y1);
+        ex = Math.round(x2);
+        ey = Math.round(y2);
+        x = Math.min(sx, ex);
+        y = Math.min(sy, ey);
+        w = Math.max(1, Math.abs(ex - sx));
+        h = Math.max(1, Math.abs(ey - sy));
+      } else {
+        const rawX = Number(item["x"]) || 0;
+        const rawY = Number(item["y"]) || 0;
+        const rawW = Number(item["width"] ?? item["w"]) || 100;
+        const rawH = Number(item["height"] ?? item["h"]) || 2;
+        x = Math.max(0, Math.round(rawX));
+        y = Math.max(0, Math.round(rawY));
+        w = Math.max(1, Math.round(rawW));
+        h = Math.max(1, Math.round(rawH));
+        sx = x;
+        sy = y;
+        ex = x + w;
+        ey = y + h;
+      }
+
+      const stroke =
+        typeof item["stroke"] === "string" && item["stroke"].startsWith("#")
+          ? item["stroke"]
+          : typeof item["color"] === "string" && item["color"].startsWith("#")
+            ? item["color"]
+            : "#1E1E1E";
+
+      const strokeW = Math.max(
+        1,
+        Math.min(16, Math.round(Number(item["strokeWidth"] ?? item["width"]) || 2)),
+      );
+
+      convertedObjects.push({
+        id: genId(),
+        type: targetType,
+        x,
+        y,
+        w,
+        h,
+        startX: sx,
+        startY: sy,
+        endX: ex,
+        endY: ey,
+        rotation: 0,
+        color: stroke,
+        width: strokeW,
+      });
+    }
+    // 5. Other geometric shapes (triangle, diamond, star, hexagon, heart)
+    else {
+      const targetType = normalizeCanvasType(rawType);
+      const rawX = Number(item["x"]) || 0;
+      const rawY = Number(item["y"]) || 0;
+      const rawW = Number(item["width"] ?? item["w"]) || 100;
+      const rawH = Number(item["height"] ?? item["h"]) || 80;
+
+      const box =
+        parseBoundingBox(item["box_2d"], width, height) ||
+        parseBoundingBox(item["box"], width, height) ||
+        parseBoundingBox({ x: rawX, y: rawY, w: rawW, h: rawH }, width, height);
+
+      const x = box ? box.x : Math.max(0, Math.round(rawX));
+      const y = box ? box.y : Math.max(0, Math.round(rawY));
+      const w = box ? box.w : Math.max(16, Math.round(rawW));
+      const h = box ? box.h : Math.max(16, Math.round(rawH));
+
+      const stroke =
+        typeof item["stroke"] === "string" && item["stroke"].startsWith("#")
+          ? item["stroke"]
+          : typeof item["color"] === "string" && item["color"].startsWith("#")
+            ? item["color"]
+            : "#1E1E1E";
+
+      const fillVal = item["fill"];
+      const isFilled = fillVal !== "transparent" && fillVal !== false && Boolean(fillVal);
+      const bg =
+        typeof fillVal === "string" && fillVal.startsWith("#")
+          ? fillVal
+          : typeof item["bg"] === "string" && item["bg"].startsWith("#")
+            ? item["bg"]
+            : isFilled
+              ? stroke
+              : undefined;
+
+      const strokeW = Math.max(
+        1,
+        Math.min(16, Math.round(Number(item["strokeWidth"] ?? item["width"]) || 2)),
+      );
+
+      convertedObjects.push({
+        id: genId(),
+        type: targetType,
+        x,
+        y,
+        w,
+        h,
+        rotation: 0,
+        color: stroke,
+        fill: isFilled,
+        bg: isFilled ? bg : undefined,
+        width: strokeW,
+      });
+    }
+  }
+
+  return convertedObjects;
+}
+
+/**
+ * Calls server-side Gemini Vision API using @google/genai with the configurable default model.
+ * Exactly one request per conversion.
+ */
+async function callGeminiVision(
+  rawBase64: string,
+  mimeType: string,
+  width: number,
+  height: number,
+): Promise<{ title: string; objects: WhiteboardCanvasObject[] } | null> {
+  const apiKey = process.env["GEMINI_API_KEY"];
+  if (!apiKey) {
+    console.warn("[ImageConverter] GEMINI_API_KEY not found in environment.");
+    return null;
+  }
+
+  const ai = new GoogleGenAI({
+    apiKey,
+    httpOptions: { headers: { "User-Agent": "aistudio-build" } },
+  });
+
+  const base64Data = cleanBase64(rawBase64);
+  const cleanMime =
+    mimeType.includes("jpeg") || mimeType.includes("jpg")
+      ? "image/jpeg"
+      : mimeType.includes("webp")
+        ? "image/webp"
+        : "image/png";
+
+  const prompt = `Analyze this whiteboard/diagram image (${width}x${height}px).
+Extract all visible text elements, rectangles/boxes/sticky notes, circles/ellipses, and lines/connectors into structured vector elements.
+
+Requirements:
+- x/y are top-left pixel coordinates matching the image's actual pixel dimensions (${width}x${height}).
+- Split text into separate elements the way a human editor would (title vs. paragraph vs. label).
+- Estimate font size (fontSize) from how large the text visually appears in pixels.
+- Use the real hex colors seen in the image for fill, stroke, and text colors.
+- Only include shapes and lines that are actually visible in the image.
+- Return raw JSON only, no markdown fences or commentary.
+
+Output MUST be a single JSON object with this exact schema:
+{
+  "canvasWidth": ${width},
+  "canvasHeight": ${height},
+  "backgroundColor": "#ffffff",
+  "elements": [
+    { "type": "text", "text": "string", "x": number, "y": number, "width": number, "height": number, "fontSize": number, "fontWeight": "normal" | "bold", "fontStyle": "normal" | "italic", "color": "#hex", "textAlign": "left" | "center" | "right", "fontFamily": "string" },
+    { "type": "rect", "x": number, "y": number, "width": number, "height": number, "fill": "#hex" | "transparent", "stroke": "#hex", "strokeWidth": number, "rx": number },
+    { "type": "circle", "x": number, "y": number, "radius": number, "fill": "#hex" | "transparent", "stroke": "#hex", "strokeWidth": number },
+    { "type": "line", "x1": number, "y1": number, "x2": number, "y2": number, "stroke": "#hex", "strokeWidth": number }
+  ]
+}`;
+
+  const candidateModels = [
+    DEFAULT_GEMINI_VISION_MODEL,
+    "gemini-flash-latest",
+    "gemini-3.1-flash-lite",
+  ];
+
+  for (const modelName of candidateModels) {
+    try {
+      console.log(`[ImageConverter] Calling Gemini Vision with model: ${modelName}`);
+      const startTime = Date.now();
+
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  data: base64Data,
+                  mimeType: cleanMime,
+                },
+              },
+            ],
+          },
+        ],
+        config: {
+          responseMimeType: "application/json",
+        },
+      });
+
+      const duration = Date.now() - startTime;
+      const rawText = response.text || "";
+      console.log(
+        `[ImageConverter] Gemini Vision responded in ${duration}ms, response length: ${rawText.length}`,
+      );
+
+      if (!rawText.trim()) continue;
+
+      const parsed = extractAndParseJson(rawText);
+      if (!parsed) {
+        continue;
+      }
+
+      const rawElements = Array.isArray(parsed["elements"])
+        ? (parsed["elements"] as Array<Record<string, unknown>>)
+        : Array.isArray(parsed["objects"])
+          ? (parsed["objects"] as Array<Record<string, unknown>>)
+          : [];
+
+      console.log(
+        `[ImageConverter] Parsed ${rawElements.length} raw elements from Gemini Vision (${modelName})`,
+      );
+
+      const convertedObjects = processRawAiObjects(rawElements, width, height);
+
+      if (convertedObjects.length > 0) {
+        return {
+          title: typeof parsed["title"] === "string" ? parsed["title"] : "Imported Whiteboard",
+          objects: convertedObjects,
+        };
+      }
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const isQuota =
+        errMsg.includes("429") || errMsg.includes("quota") || errMsg.includes("RESOURCE_EXHAUSTED");
+      if (isQuota) {
+        console.log(
+          `[ImageConverter] Gemini model ${modelName} quota limit reached. Trying next model or fallback.`,
+        );
+      } else {
+        console.log(
+          `[ImageConverter] Gemini model ${modelName} unavailable. Trying next model or fallback.`,
+        );
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Calls OpenRouter Vision API as a fallback when Gemini is unavailable or fails.
+ */
+async function callOpenRouterVision(
+  rawBase64: string,
+  mimeType: string,
+  width: number,
+  height: number,
+): Promise<{ title: string; objects: WhiteboardCanvasObject[] } | null> {
+  const apiKey = process.env["OPENROUTER_API_KEY"];
+  if (!apiKey || !apiKey.trim()) {
+    console.log("[ImageConverter] OPENROUTER_API_KEY not configured, skipping OpenRouter fallback");
+    return null;
+  }
+
+  const base64Data = cleanBase64(rawBase64);
+  const cleanMime =
+    mimeType.includes("jpeg") || mimeType.includes("jpg")
+      ? "image/jpeg"
+      : mimeType.includes("webp")
+        ? "image/webp"
+        : "image/png";
+
+  const dataUri = `data:${cleanMime};base64,${base64Data}`;
+
+  const promptText = `Analyze this whiteboard/diagram image (${width}x${height}px).
+Extract all visible text elements, rectangles/boxes/sticky notes, circles/ellipses, and lines/connectors into structured vector elements.
+
+Requirements:
+- x/y are top-left pixel coordinates matching the image's actual pixel dimensions (${width}x${height}).
+- Split text into separate elements the way a human editor would (title vs. paragraph vs. label).
+- Estimate font size (fontSize) from how large the text visually appears in pixels.
+- Use the real hex colors seen in the image for fill, stroke, and text colors.
+- Only include shapes and lines that are actually visible in the image.
+- Return raw JSON only, no markdown fences or commentary.
+
+Output MUST be a single JSON object with this exact schema:
+{
+  "canvasWidth": ${width},
+  "canvasHeight": ${height},
+  "backgroundColor": "#ffffff",
+  "elements": [
+    { "type": "text", "text": "string", "x": number, "y": number, "width": number, "height": number, "fontSize": number, "fontWeight": "normal" | "bold", "fontStyle": "normal" | "italic", "color": "#hex", "textAlign": "left" | "center" | "right", "fontFamily": "string" },
+    { "type": "rect", "x": number, "y": number, "width": number, "height": number, "fill": "#hex" | "transparent", "stroke": "#hex", "strokeWidth": number, "rx": number },
+    { "type": "circle", "x": number, "y": number, "radius": number, "fill": "#hex" | "transparent", "stroke": "#hex", "strokeWidth": number },
+    { "type": "line", "x1": number, "y1": number, "x2": number, "y2": number, "stroke": "#hex", "strokeWidth": number }
+  ]
+}`;
+
+  const candidateModels = [
+    "google/gemini-2.0-flash-001",
+    "qwen/qwen-2.5-vl-72b-instruct:free",
+    "meta-llama/llama-3.2-11b-vision-instruct:free",
+    "mistralai/pixtral-12b:free",
+    "openai/gpt-4o-mini",
+  ];
+
+  for (const model of candidateModels) {
+    try {
+      console.log(`[ImageConverter] Calling OpenRouter Vision fallback with model: ${model}`);
+      const startTime = Date.now();
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 35000);
+
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey.trim()}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://ai.studio",
+          "X-Title": "Whiteboard AI Converter",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: promptText,
+                },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: dataUri,
+                  },
+                },
+              ],
+            },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.1,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      const duration = Date.now() - startTime;
+
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => "");
+        console.warn(
+          `[ImageConverter] OpenRouter model ${model} HTTP ${res.status} error:`,
+          errBody.slice(0, 200),
+        );
+        continue;
+      }
+
+      const json = await res.json();
+      const content = json.choices?.[0]?.message?.content;
+      console.log(
+        `[ImageConverter] OpenRouter (${model}) responded in ${duration}ms, content length: ${content?.length || 0}`,
+      );
+
+      if (!content || typeof content !== "string" || !content.trim()) continue;
+
+      const parsed = extractAndParseJson(content);
+      if (!parsed) continue;
+
+      const rawElements = Array.isArray(parsed["elements"])
+        ? (parsed["elements"] as Array<Record<string, unknown>>)
+        : Array.isArray(parsed["objects"])
+          ? (parsed["objects"] as Array<Record<string, unknown>>)
+          : [];
+
+      console.log(
+        `[ImageConverter] Parsed ${rawElements.length} raw elements from OpenRouter (${model})`,
+      );
+
+      const convertedObjects = processRawAiObjects(rawElements, width, height);
+
+      if (convertedObjects.length > 0) {
+        return {
+          title: typeof parsed["title"] === "string" ? parsed["title"] : "Imported Whiteboard",
+          objects: convertedObjects,
+        };
+      }
+    } catch (err) {
+      console.warn(`[ImageConverter] OpenRouter model ${model} failed:`, err);
+    }
+  }
+
+  return null;
+}
+
+export function compileConversionResponse(
   title: string,
   width: number,
   height: number,
-  validObjects: DetectedObject[],
-  source: "ocr-cv" | "gemini-fallback" = "ocr-cv",
+  validObjects: WhiteboardCanvasObject[],
+  source: "gemini-vision" | "openrouter-vision" | "deepai-vision" | "ocr-cv" | "fallback",
 ): ConversionResponse {
   let textCount = 0;
   let stickyCount = 0;
@@ -182,17 +967,30 @@ function compileConversionResponse(
   let drawingsCount = 0;
   let imagesCount = 0;
 
+  const shapeTypes = new Set([
+    "rect",
+    "roundRect",
+    "circle",
+    "ellipse",
+    "triangle",
+    "diamond",
+    "star",
+    "hexagon",
+    "heart",
+  ]);
+  const connectorTypes = new Set(["line", "arrow", "doubleArrow", "dashed"]);
+
   for (const obj of validObjects) {
     if (obj.type === "text") textCount++;
     else if (obj.type === "sticky") stickyCount++;
-    else if (obj.type === "shape") shapesCount++;
-    else if (obj.type === "connector") connectorsCount++;
-    else if (obj.type === "drawing") drawingsCount++;
-    else if (obj.type === "embeddedImage") imagesCount++;
+    else if (shapeTypes.has(obj.type)) shapesCount++;
+    else if (connectorTypes.has(obj.type)) connectorsCount++;
+    else if (obj.type === "pen" || obj.type === "highlighter") drawingsCount++;
+    else if (obj.type === "image") imagesCount++;
   }
 
   return {
-    title,
+    title: title || "Imported Whiteboard",
     imageWidth: width,
     imageHeight: height,
     objects: validObjects,
@@ -209,386 +1007,82 @@ function compileConversionResponse(
   };
 }
 
+/**
+ * Converts a whiteboard image / screenshot / diagram into native, editable whiteboard objects.
+ */
 export async function convertWhiteboardImage(
   req: ConvertImageRequest,
 ): Promise<ConversionResponse> {
-  const { imageBase64, mimeType, width, height } = req;
-  const cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, "");
+  const { width, height, imageBase64, mimeType } = req;
 
-  // 1. OCR + Computer Vision Stage (Fast & Deterministic)
-  let ocrCvResult: Awaited<ReturnType<typeof runOcrAndComputerVision>> | null = null;
-  try {
-    ocrCvResult = await runOcrAndComputerVision(req);
-    // If OCR + CV is confident, return immediately without calling Gemini
-    if (ocrCvResult && ocrCvResult.isConfident && ocrCvResult.objects.length > 0) {
+  // Diagnostic logging
+  console.log(`[ImageConverter] ========================================`);
+  console.log(`[ImageConverter] Conversion started`);
+  console.log(`[ImageConverter] Target image dimensions: ${width}x${height}`);
+  console.log(`[ImageConverter] MIME type: ${mimeType}, base64 length: ${imageBase64.length}`);
+
+  // 1. Primary: Gemini Vision Multimodal Extraction
+  if (process.env["GEMINI_API_KEY"]) {
+    console.log(`[ImageConverter] Invoking Gemini Vision Pipeline (Primary)...`);
+    const geminiResult = await callGeminiVision(imageBase64, mimeType, width, height);
+
+    if (geminiResult && geminiResult.objects.length > 0) {
+      console.log(
+        `[ImageConverter] Gemini Vision successfully extracted ${geminiResult.objects.length} objects`,
+      );
+      console.log(
+        `[ImageConverter] First reconstructed object:`,
+        JSON.stringify(geminiResult.objects[0]),
+      );
+      console.log(
+        `[ImageConverter] Final number of objects to insert: ${geminiResult.objects.length}`,
+      );
+
       return compileConversionResponse(
-        ocrCvResult.title || "Imported Whiteboard",
+        geminiResult.title,
         width,
         height,
-        ocrCvResult.objects,
-        "ocr-cv",
+        geminiResult.objects,
+        "gemini-vision",
       );
     }
-  } catch (ocrErr) {
-    console.warn("OCR/CV preliminary pass caught error, proceeding to AI fallback:", ocrErr);
+    console.log(`[ImageConverter] Gemini Vision completed. Proceeding to OpenRouter fallback.`);
   }
 
-  // 2. Gemini AI Fallback
-  const auth = getAiKey();
-  if (!auth) {
-    // If no AI key is configured, check if we have usable OCR/CV results
-    if (ocrCvResult && ocrCvResult.objects.length > 0) {
+  // 2. Fallback Provider: OpenRouter Vision API (invoked ONLY after Gemini fails or is unavailable)
+  if (process.env["OPENROUTER_API_KEY"]) {
+    console.log(`[ImageConverter] Invoking OpenRouter Vision Fallback Pipeline...`);
+    const openRouterResult = await callOpenRouterVision(imageBase64, mimeType, width, height);
+
+    if (openRouterResult && openRouterResult.objects.length > 0) {
+      console.log(
+        `[ImageConverter] OpenRouter Vision fallback successfully extracted ${openRouterResult.objects.length} objects`,
+      );
+      console.log(
+        `[ImageConverter] First reconstructed object:`,
+        JSON.stringify(openRouterResult.objects[0]),
+      );
+      console.log(
+        `[ImageConverter] Final number of objects to insert: ${openRouterResult.objects.length}`,
+      );
+
       return compileConversionResponse(
-        ocrCvResult.title || "Imported Whiteboard",
+        openRouterResult.title,
         width,
         height,
-        ocrCvResult.objects,
-        "ocr-cv",
+        openRouterResult.objects,
+        "openrouter-vision",
       );
     }
-    throw new Error("Gemini API key is not configured. Please set GEMINI_API_KEY.");
+    console.log(`[ImageConverter] OpenRouter Vision completed. Proceeding to OCR/CV fallback.`);
   }
 
-  const ocrContextPrompt =
-    ocrCvResult && ocrCvResult.rawOcrText
-      ? `\n\nPreliminary OCR detected text tokens in the image:\n${ocrCvResult.rawOcrText}\nUse this OCR context to ensure exact spelling, wording, and positioning.`
-      : "";
+  // 3. Secondary: Deterministic OCR + Computer Vision pipeline
+  console.log(`[ImageConverter] Running Deterministic OCR + Computer Vision Pipeline...`);
+  const ocrCvResult = await runOcrAndComputerVision(req);
 
-  const prompt = `You are a precision computer vision whiteboard and diagram reconstruction engine.
-Analyze this whiteboard image / diagram screenshot (dimensions: ${width}x${height} pixels) and break it down into native vector whiteboard objects.
-${ocrContextPrompt}
-
-Coordinate system:
-- Use image pixel coordinates (X from 0 to ${width}, Y from 0 to ${height}).
-- Top-left is (0, 0), bottom-right is (${width}, ${height}).
-
-Identify and extract all elements:
-1. TYPED / DIGITAL TEXT ("type": "text"):
-   - Read exact text accurately (keep multiline breaks with \\n).
-   - "x", "y", "width", "height", "fontSize" (approx in px), "color" (hex color like "#1E1E1E", "#2563EB", etc.), "bold" (boolean), "italic" (boolean), "rotation" (degrees, 0 if upright).
-   - Do NOT invent text if OCR is blurry.
-
-2. STICKY NOTES ("type": "sticky"):
-   - Post-it / sticky notes (often yellow #fef08a, orange #fed7aa, green #bbf7d0, blue #bfdbfe, pink #fbcfe8, purple #e9d5ff, white #ffffff).
-   - "x", "y", "width", "height", "text" (inner text content), "bg" (hex background color), "color" (text color, usually "#422006" or "#1E1E1E"), "fontSize", "rotation".
-
-3. GEOMETRIC SHAPES ("type": "shape"):
-   - "shapeType": "rect" | "roundRect" | "circle" | "ellipse" | "triangle" | "diamond" | "star" | "hexagon" | "heart".
-   - "x", "y", "width", "height", "color" (hex outline color), "fill" (boolean, true if filled with solid color), "strokeWidth" (px), "rotation".
-
-4. CONNECTORS & ARROWS ("type": "connector"):
-   - "connectorType": "arrow" | "line" | "doubleArrow" | "dashed".
-   - "startX", "startY", "endX", "endY", "color" (hex), "strokeWidth" (px).
-
-5. FREEHAND INK & DRAWINGS ("type": "drawing"):
-   - Hand-drawn doodles, handwriting strokes, arrows or marks that are not clean shapes.
-   - "points": array of { "x": number, "y": number } representing the stroke path points.
-   - "color" (hex), "strokeWidth" (px), "isHighlighter" (boolean, true if wide transparent highlighter marker).
-
-6. EMBEDDED PHOTOS / UNCERTAIN REGIONS ("type": "embeddedImage"):
-   - Complex illustrations, charts, photos, stamps, logos, or ambiguous content that cannot be represented accurately as pure text or simple vectors.
-   - "x", "y", "width", "height", "description".
-   - This region will be cropped directly from the original image to preserve pixel accuracy.
-
-Output STRICT JSON in this exact structure:
-{
-  "title": "Detected Whiteboard Title",
-  "objects": [
-    ...
-  ]
-}`;
-
-  let lastError: unknown = null;
-  let responseText: string | null = null;
-
-  if (auth.type === "gemini") {
-    const ai = new GoogleGenAI({
-      apiKey: auth.key,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        },
-      },
-    });
-    for (const modelName of GEMINI_MODELS) {
-      try {
-        const resp = await ai.models.generateContent({
-          model: modelName,
-          contents: [
-            {
-              role: "user",
-              parts: [
-                { text: prompt },
-                {
-                  inlineData: {
-                    mimeType: mimeType || "image/png",
-                    data: cleanBase64,
-                  },
-                },
-              ],
-            },
-          ],
-          config: {
-            responseMimeType: "application/json",
-            temperature: 0.1,
-          },
-        });
-        if (resp.text) {
-          responseText = resp.text;
-          break;
-        }
-      } catch (err: any) {
-        lastError = err;
-        const errStr = String(err?.message || err);
-        console.warn(`Gemini model ${modelName} failed: ${errStr}`);
-        if (
-          isQuotaOrRateLimitError(errStr) ||
-          errStr.includes("NOT_FOUND") ||
-          errStr.includes("404")
-        ) {
-          continue;
-        }
-      }
-    }
-  } else {
-    // Lovable AI Gateway fallback
-    for (const modelName of CANDIDATE_MODELS) {
-      const maxRetries = 1;
-
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        try {
-          if (attempt > 0) {
-            await sleep(500);
-          }
-
-          const res = await fetch(AI_GATEWAY_URL, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${auth.key}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model: modelName,
-              temperature: 0.1,
-              response_format: { type: "json_object" },
-              messages: [
-                {
-                  role: "user",
-                  content: [
-                    { type: "text", text: prompt },
-                    {
-                      type: "image_url",
-                      image_url: { url: `data:${mimeType || "image/png"};base64,${cleanBase64}` },
-                    },
-                  ],
-                },
-              ],
-            }),
-          });
-
-          if (!res.ok) {
-            const errBody = await res.text().catch(() => "");
-            throw new Error(`${res.status} ${errBody}`);
-          }
-
-          const json = (await res.json()) as {
-            choices?: Array<{ message?: { content?: string } }>;
-          };
-          const content = json.choices?.[0]?.message?.content;
-          if (content) {
-            responseText = content;
-            break;
-          }
-        } catch (err: any) {
-          lastError = err;
-          const errStr = String(err?.message || err);
-          console.warn(`Model ${modelName} attempt ${attempt + 1} failed: ${errStr}`);
-
-          if (
-            isQuotaOrRateLimitError(errStr) ||
-            errStr.includes("NOT_FOUND") ||
-            errStr.includes("404")
-          ) {
-            break;
-          }
-        }
-      }
-
-      if (responseText) {
-        break;
-      }
-    }
-  }
-
-  // Graceful fallback: If Gemini failed but OCR/CV yielded usable results, use OCR/CV!
-  if (!responseText) {
-    if (ocrCvResult && ocrCvResult.objects.length > 0) {
-      console.info(
-        "Gemini AI was unavailable; gracefully falling back to deterministic OCR/CV results.",
-      );
-      return compileConversionResponse(
-        ocrCvResult.title || "Imported Whiteboard",
-        width,
-        height,
-        ocrCvResult.objects,
-        "ocr-cv",
-      );
-    }
-
-    const cleanMsg = cleanErrorMessage(lastError);
-    if (isQuotaOrRateLimitError(cleanMsg)) {
-      throw new Error(
-        "AI Vision rate limit reached. Please wait a few seconds and try again, or configure your GEMINI_API_KEY.",
-      );
-    }
-    throw new Error(
-      cleanMsg ||
-        "The AI vision service is currently experiencing high demand. Please try again shortly.",
-    );
-  }
-
-  let parsed: { title?: string; objects?: DetectedObject[] };
-
-  try {
-    const cleaned = responseText
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim();
-    parsed = JSON.parse(cleaned);
-  } catch (err) {
-    console.error("Failed to parse Gemini vision response as JSON:", responseText, err);
-    if (ocrCvResult && ocrCvResult.objects.length > 0) {
-      return compileConversionResponse(
-        ocrCvResult.title || "Imported Whiteboard",
-        width,
-        height,
-        ocrCvResult.objects,
-        "ocr-cv",
-      );
-    }
-    throw new Error("Could not parse image analysis response from AI vision service.");
-  }
-
-  const rawObjects = Array.isArray(parsed.objects) ? parsed.objects : [];
-  const validObjects: DetectedObject[] = [];
-
-  for (const obj of rawObjects) {
-    if (!obj || typeof obj !== "object" || !("type" in obj)) continue;
-
-    switch (obj.type) {
-      case "text": {
-        if (typeof obj.text === "string" && obj.text.trim()) {
-          validObjects.push({
-            type: "text",
-            text: obj.text,
-            x: Math.round(Number(obj.x) || 0),
-            y: Math.round(Number(obj.y) || 0),
-            width: Math.max(10, Math.round(Number(obj.width) || 120)),
-            height: Math.max(10, Math.round(Number(obj.height) || 30)),
-            fontSize: Math.max(10, Math.min(160, Math.round(Number(obj.fontSize) || 18))),
-            color: typeof obj.color === "string" ? obj.color : "#1E1E1E",
-            bold: Boolean(obj.bold),
-            italic: Boolean(obj.italic),
-            underline: Boolean(obj.underline),
-            rotation: Math.round(Number(obj.rotation) || 0),
-          });
-        }
-        break;
-      }
-      case "sticky": {
-        validObjects.push({
-          type: "sticky",
-          text: typeof obj.text === "string" ? obj.text : "",
-          x: Math.round(Number(obj.x) || 0),
-          y: Math.round(Number(obj.y) || 0),
-          width: Math.max(40, Math.round(Number(obj.width) || 180)),
-          height: Math.max(40, Math.round(Number(obj.height) || 140)),
-          bg: typeof obj.bg === "string" ? obj.bg : "#fef08a",
-          color: typeof obj.color === "string" ? obj.color : "#422006",
-          fontSize: Math.max(10, Math.min(48, Math.round(Number(obj.fontSize) || 16))),
-          rotation: Math.round(Number(obj.rotation) || 0),
-        });
-        break;
-      }
-      case "shape": {
-        const allowedShapes = [
-          "rect",
-          "roundRect",
-          "circle",
-          "ellipse",
-          "triangle",
-          "diamond",
-          "star",
-          "hexagon",
-          "heart",
-        ];
-        const sType = allowedShapes.includes(obj.shapeType) ? obj.shapeType : "rect";
-        validObjects.push({
-          type: "shape",
-          shapeType: sType as DetectedShapeObject["shapeType"],
-          x: Math.round(Number(obj.x) || 0),
-          y: Math.round(Number(obj.y) || 0),
-          width: Math.max(5, Math.round(Number(obj.width) || 100)),
-          height: Math.max(5, Math.round(Number(obj.height) || 100)),
-          color: typeof obj.color === "string" ? obj.color : "#1E1E1E",
-          fill: Boolean(obj.fill),
-          strokeWidth: Math.max(1, Math.min(20, Math.round(Number(obj.strokeWidth) || 2))),
-          rotation: Math.round(Number(obj.rotation) || 0),
-        });
-        break;
-      }
-      case "connector": {
-        const allowedConn = ["line", "arrow", "doubleArrow", "dashed"];
-        const cType = allowedConn.includes(obj.connectorType) ? obj.connectorType : "arrow";
-        validObjects.push({
-          type: "connector",
-          connectorType: cType as DetectedConnectorObject["connectorType"],
-          startX: Math.round(Number(obj.startX) || 0),
-          startY: Math.round(Number(obj.startY) || 0),
-          endX: Math.round(Number(obj.endX) || 100),
-          endY: Math.round(Number(obj.endY) || 100),
-          color: typeof obj.color === "string" ? obj.color : "#1E1E1E",
-          strokeWidth: Math.max(1, Math.min(20, Math.round(Number(obj.strokeWidth) || 2))),
-        });
-        break;
-      }
-      case "drawing": {
-        const pts = Array.isArray(obj.points)
-          ? obj.points
-              .filter((p) => p && typeof p.x === "number" && typeof p.y === "number")
-              .map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) }))
-          : [];
-        if (pts.length > 0) {
-          validObjects.push({
-            type: "drawing",
-            points: pts,
-            color: typeof obj.color === "string" ? obj.color : "#1E1E1E",
-            strokeWidth: Math.max(1, Math.min(30, Math.round(Number(obj.strokeWidth) || 4))),
-            isHighlighter: Boolean(obj.isHighlighter),
-          });
-        }
-        break;
-      }
-      case "embeddedImage": {
-        const w = Math.round(Number(obj.width) || 100);
-        const h = Math.round(Number(obj.height) || 100);
-        if (w > 5 && h > 5) {
-          validObjects.push({
-            type: "embeddedImage",
-            x: Math.max(0, Math.round(Number(obj.x) || 0)),
-            y: Math.max(0, Math.round(Number(obj.y) || 0)),
-            width: Math.min(width, w),
-            height: Math.min(height, h),
-            ...(typeof obj.description === "string" ? { description: obj.description } : {}),
-          });
-        }
-        break;
-      }
-    }
-  }
-
-  // If Gemini produced zero valid objects but OCR/CV had objects, use OCR/CV
-  if (validObjects.length === 0 && ocrCvResult && ocrCvResult.objects.length > 0) {
+  if (ocrCvResult.objects && ocrCvResult.objects.length > 0) {
+    console.log(`[ImageConverter] OCR/CV extracted ${ocrCvResult.objects.length} objects`);
     return compileConversionResponse(
       ocrCvResult.title || "Imported Whiteboard",
       width,
@@ -598,11 +1092,29 @@ Output STRICT JSON in this exact structure:
     );
   }
 
+  // 4. Fallback: If image contains content but zero vector primitives were extracted,
+  // ensure the whiteboard is NEVER empty by providing a clean base image canvas object
+  console.log(`[ImageConverter] Applying fallback safe canvas image object`);
+  const fullDataUrl = imageBase64.startsWith("data:")
+    ? imageBase64
+    : `data:${mimeType || "image/png"};base64,${imageBase64}`;
+
+  const fallbackImageObject: WhiteboardCanvasObject = {
+    id: genId(),
+    type: "image",
+    x: 0,
+    y: 0,
+    w: width,
+    h: height,
+    src: fullDataUrl,
+    rotation: 0,
+  };
+
   return compileConversionResponse(
-    parsed.title || "Converted Whiteboard",
+    "Imported Whiteboard",
     width,
     height,
-    validObjects,
-    "gemini-fallback",
+    [fallbackImageObject],
+    "fallback",
   );
 }

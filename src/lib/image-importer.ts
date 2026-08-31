@@ -31,6 +31,67 @@ export interface PreparedWhiteboardObject {
 }
 
 /**
+ * Optimizes and encodes an image DataURL for AI vision analysis.
+ */
+export async function prepareDataUrlForAnalysis(dataUrl: string): Promise<{
+  dataUrl: string;
+  base64: string;
+  mimeType: string;
+  width: number;
+  height: number;
+  originalImg: HTMLImageElement;
+}> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onerror = () => reject(new Error("Failed to load image element from data URL"));
+    img.onload = () => {
+      const origW = img.naturalWidth || img.width || 1200;
+      const origH = img.naturalHeight || img.height || 800;
+
+      const maxDim = 1600;
+      let targetW = origW;
+      let targetH = origH;
+
+      if (origW > maxDim || origH > maxDim) {
+        if (origW >= origH) {
+          targetH = Math.round((origH / origW) * maxDim);
+          targetW = maxDim;
+        } else {
+          targetW = Math.round((origW / origH) * maxDim);
+          targetH = maxDim;
+        }
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Canvas 2D context unavailable"));
+        return;
+      }
+
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, targetW, targetH);
+      ctx.drawImage(img, 0, 0, targetW, targetH);
+
+      const optimizedDataUrl = canvas.toDataURL("image/jpeg", 0.92);
+      const base64 = optimizedDataUrl.split(",")[1] || "";
+
+      resolve({
+        dataUrl,
+        base64,
+        mimeType: "image/jpeg",
+        width: targetW,
+        height: targetH,
+        originalImg: img,
+      });
+    };
+    img.src = dataUrl;
+  });
+}
+
+/**
  * Optimizes and encodes an image File/Blob for AI vision analysis.
  */
 export async function prepareImageForAnalysis(file: File | Blob): Promise<{
@@ -46,54 +107,7 @@ export async function prepareImageForAnalysis(file: File | Blob): Promise<{
     reader.onerror = () => reject(new Error("Failed to read image file"));
     reader.onload = () => {
       const dataUrl = reader.result as string;
-      const img = new Image();
-      img.onerror = () => reject(new Error("Failed to load image element"));
-      img.onload = () => {
-        const origW = img.naturalWidth || img.width || 1200;
-        const origH = img.naturalHeight || img.height || 800;
-
-        // Resize down if extreme (>2048px) to keep network and inference fast while retaining high OCR precision
-        const maxDim = 2048;
-        let targetW = origW;
-        let targetH = origH;
-
-        if (origW > maxDim || origH > maxDim) {
-          if (origW >= origH) {
-            targetH = Math.round((origH / origW) * maxDim);
-            targetW = maxDim;
-          } else {
-            targetW = Math.round((origW / origH) * maxDim);
-            targetH = maxDim;
-          }
-        }
-
-        const canvas = document.createElement("canvas");
-        canvas.width = targetW;
-        canvas.height = targetH;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          reject(new Error("Canvas 2D context unavailable"));
-          return;
-        }
-
-        // Fill clean white background for transparency handling
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, targetW, targetH);
-        ctx.drawImage(img, 0, 0, targetW, targetH);
-
-        const optimizedDataUrl = canvas.toDataURL("image/jpeg", 0.92);
-        const base64 = optimizedDataUrl.split(",")[1] || "";
-
-        resolve({
-          dataUrl,
-          base64,
-          mimeType: "image/jpeg",
-          width: targetW,
-          height: targetH,
-          originalImg: img,
-        });
-      };
-      img.src = dataUrl;
+      prepareDataUrlForAnalysis(dataUrl).then(resolve).catch(reject);
     };
     reader.readAsDataURL(file);
   });
@@ -121,6 +135,7 @@ export async function analyzeWhiteboardImage(
 
   onStatusUpdate?.("Analyzing image with AI vision...");
 
+  console.log(`[SmartImageImporter] API request started to /api/convert-whiteboard-image`);
   const response = await fetch("/api/convert-whiteboard-image", {
     method: "POST",
     headers: {
@@ -135,9 +150,13 @@ export async function analyzeWhiteboardImage(
     }),
   });
 
+  console.log(`[SmartImageImporter] API response status: ${response.status}`);
   let rawText = "";
   try {
     rawText = await response.text();
+    console.log(
+      `[SmartImageImporter] Raw API response length: ${rawText.length}, preview: ${rawText.slice(0, 300)}...`,
+    );
   } catch {
     throw new Error("Failed to read server response");
   }
@@ -160,6 +179,11 @@ export async function analyzeWhiteboardImage(
   let data: AiConversionResult;
   try {
     data = JSON.parse(rawText);
+    console.log(`[SmartImageImporter] Parsed JSON objects count: ${data.objects?.length || 0}`);
+    console.log(
+      `[SmartImageImporter] Object types returned:`,
+      data.objects?.map((o) => o.type),
+    );
   } catch {
     throw new Error("Received an unexpected response format from server. Please try again.");
   }
@@ -259,168 +283,224 @@ export function reconstructWhiteboardElements(
     const obj = rawObj as any;
     if (!obj || !obj.type) continue;
 
-    switch (obj.type) {
-      case "text": {
-        const text = String(obj.text || "").trim();
-        if (!text) break;
-        const wx = mapX(obj.x);
-        const wy = mapY(obj.y);
-        const baseFontSize = Number(obj.fontSize) || 18;
-        const scaledSize = Math.max(
-          12,
-          Math.min(120, Math.round(baseFontSize * worldScale * scaleToNaturalX)),
-        );
+    const rawType = obj.type;
 
-        textElements.push({
-          id: genId(),
-          type: "text",
-          text,
-          x: wx,
-          y: wy,
-          w: mapDim(obj.width || 150),
-          h: mapDim(obj.height || 40, true),
-          size: scaledSize,
-          font: "Segoe UI,Inter,system-ui,sans-serif",
-          color: obj.color || "#1E1E1E",
-          bold: Boolean(obj.bold),
-          italic: Boolean(obj.italic),
-          underline: Boolean(obj.underline),
-          rotation: Number(obj.rotation) || 0,
-          isPlaceholder: false,
-        });
-        break;
+    if (rawType === "text") {
+      const text = String(obj.text || "").trim();
+      if (!text) continue;
+      const wx = mapX(obj.x);
+      const wy = mapY(obj.y);
+      const baseFontSize = Number(obj.size ?? obj.fontSize) || 18;
+      const scaledSize = Math.max(
+        12,
+        Math.min(120, Math.round(baseFontSize * worldScale * scaleToNaturalX)),
+      );
+
+      const fontFamily =
+        typeof obj.font === "string" && obj.font.trim()
+          ? obj.font.trim()
+          : "Segoe UI,Inter,system-ui,sans-serif";
+
+      textElements.push({
+        id: obj.id || genId(),
+        type: "text",
+        text,
+        x: wx,
+        y: wy,
+        w: mapDim(obj.w ?? obj.width ?? 150),
+        h: mapDim(obj.h ?? obj.height ?? 40, true),
+        size: scaledSize,
+        font: fontFamily,
+        color: obj.color || "#1E1E1E",
+        bold: Boolean(obj.bold),
+        italic: Boolean(obj.italic),
+        underline: Boolean(obj.underline),
+        rotation: Number(obj.rotation) || 0,
+        isPlaceholder: false,
+      });
+    } else if (rawType === "sticky") {
+      const text = String(obj.text || "");
+      const wx = mapX(obj.x);
+      const wy = mapY(obj.y);
+      const w = mapDim(obj.w ?? obj.width ?? 180);
+      const h = mapDim(obj.h ?? obj.height ?? 140, true);
+      const baseFontSize = Number(obj.size ?? obj.fontSize) || 16;
+      const scaledSize = Math.max(
+        12,
+        Math.min(48, Math.round(baseFontSize * worldScale * scaleToNaturalX)),
+      );
+
+      stickyNotes.push({
+        id: obj.id || genId(),
+        type: "sticky",
+        text,
+        x: wx,
+        y: wy,
+        w,
+        h,
+        bg: obj.bg || "#fef08a",
+        color: obj.color || "#422006",
+        size: scaledSize,
+        font: "Segoe UI,Inter,system-ui,sans-serif",
+        rotation: Number(obj.rotation) || 0,
+        isPlaceholder: !text.trim(),
+      });
+    } else if (
+      rawType === "shape" ||
+      [
+        "rect",
+        "roundRect",
+        "circle",
+        "ellipse",
+        "triangle",
+        "diamond",
+        "star",
+        "hexagon",
+        "heart",
+      ].includes(rawType)
+    ) {
+      const shapeType = rawType === "shape" ? obj.shapeType || "rect" : rawType;
+      const wx = mapX(obj.x);
+      const wy = mapY(obj.y);
+      const w = mapDim(obj.w ?? obj.width ?? 120);
+      const h = mapDim(obj.h ?? obj.height ?? 100, true);
+      const strokeW = Math.max(
+        1,
+        Math.min(
+          16,
+          Math.round((Number(obj.width ?? obj.strokeWidth) || 2) * worldScale * scaleToNaturalX),
+        ),
+      );
+
+      const el: PreparedWhiteboardObject = {
+        id: obj.id || genId(),
+        type: shapeType,
+        x: wx,
+        y: wy,
+        w,
+        h,
+        color: obj.color || "#1E1E1E",
+        fill: Boolean(obj.fill),
+        width: strokeW,
+        rotation: Number(obj.rotation) || 0,
+      };
+
+      // If shape is a large filled rectangle acting like a container card/section, place in background
+      if ((shapeType === "rect" || shapeType === "roundRect") && w > 300 && h > 200 && obj.fill) {
+        backgroundShapes.push(el);
+      } else {
+        standardShapes.push(el);
       }
+    } else if (
+      rawType === "connector" ||
+      ["line", "arrow", "doubleArrow", "dashed"].includes(rawType)
+    ) {
+      const connectorType = rawType === "connector" ? obj.connectorType || "arrow" : rawType;
+      let sx = 0,
+        sy = 0,
+        dw = 100,
+        dh = 50;
 
-      case "sticky": {
-        const text = String(obj.text || "");
-        const wx = mapX(obj.x);
-        const wy = mapY(obj.y);
-        const w = mapDim(obj.width || 180);
-        const h = mapDim(obj.height || 140, true);
-        const baseFontSize = Number(obj.fontSize) || 16;
-        const scaledSize = Math.max(
-          12,
-          Math.min(48, Math.round(baseFontSize * worldScale * scaleToNaturalX)),
-        );
-
-        stickyNotes.push({
-          id: genId(),
-          type: "sticky",
-          text,
-          x: wx,
-          y: wy,
-          w,
-          h,
-          bg: obj.bg || "#fef08a",
-          color: obj.color || "#422006",
-          size: scaledSize,
-          font: "Segoe UI,Inter,system-ui,sans-serif",
-          rotation: Number(obj.rotation) || 0,
-          isPlaceholder: !text.trim(),
-        });
-        break;
-      }
-
-      case "shape": {
-        const shapeType = obj.shapeType || "rect";
-        const wx = mapX(obj.x);
-        const wy = mapY(obj.y);
-        const w = mapDim(obj.width || 120);
-        const h = mapDim(obj.height || 100, true);
-        const strokeW = Math.max(
-          1,
-          Math.min(16, Math.round((Number(obj.strokeWidth) || 2) * worldScale * scaleToNaturalX)),
-        );
-
-        const el: PreparedWhiteboardObject = {
-          id: genId(),
-          type: shapeType,
-          x: wx,
-          y: wy,
-          w,
-          h,
-          color: obj.color || "#1E1E1E",
-          fill: Boolean(obj.fill),
-          width: strokeW,
-          rotation: Number(obj.rotation) || 0,
-        };
-
-        // If shape is a large filled rectangle acting like a container card/section, place in background
-        if ((shapeType === "rect" || shapeType === "roundRect") && w > 300 && h > 200 && obj.fill) {
-          backgroundShapes.push(el);
-        } else {
-          standardShapes.push(el);
-        }
-        break;
-      }
-
-      case "connector": {
-        const connectorType = obj.connectorType || "arrow";
-        const sx = mapX(obj.startX);
-        const sy = mapY(obj.startY);
+      if (obj.startX != null && obj.endX != null) {
+        sx = mapX(obj.startX);
+        sy = mapY(obj.startY);
         const ex = mapX(obj.endX);
         const ey = mapY(obj.endY);
+        dw = ex - sx;
+        dh = ey - sy;
+      } else {
+        sx = mapX(obj.x || 0);
+        sy = mapY(obj.y || 0);
+        dw = mapDim(obj.w ?? obj.width ?? 100);
+        dh = mapDim(obj.h ?? obj.height ?? 50, true);
+      }
+
+      const strokeW = Math.max(
+        1,
+        Math.min(
+          14,
+          Math.round((Number(obj.width ?? obj.strokeWidth) || 2) * worldScale * scaleToNaturalX),
+        ),
+      );
+
+      connectorElements.push({
+        id: obj.id || genId(),
+        type: connectorType,
+        x: sx,
+        y: sy,
+        w: dw,
+        h: dh,
+        color: obj.color || "#1E1E1E",
+        width: strokeW,
+      });
+    } else if (rawType === "drawing" || rawType === "pen" || rawType === "highlighter") {
+      const pts = Array.isArray(obj.points)
+        ? obj.points.map((p: { x: number; y: number }) => ({
+            x: mapX(p.x),
+            y: mapY(p.y),
+          }))
+        : [];
+
+      if (pts.length > 0) {
         const strokeW = Math.max(
           1,
-          Math.min(14, Math.round((Number(obj.strokeWidth) || 2) * worldScale * scaleToNaturalX)),
+          Math.min(
+            24,
+            Math.round((Number(obj.width ?? obj.strokeWidth) || 3) * worldScale * scaleToNaturalX),
+          ),
         );
+        const isHighlighter = rawType === "highlighter" || Boolean(obj.isHighlighter);
 
-        connectorElements.push({
-          id: genId(),
-          type: connectorType,
-          x: sx,
-          y: sy,
-          w: ex - sx,
-          h: ey - sy,
-          color: obj.color || "#1E1E1E",
-          width: strokeW,
-        });
-        break;
-      }
-
-      case "drawing": {
-        const pts = Array.isArray(obj.points)
-          ? obj.points.map((p: { x: number; y: number }) => ({
-              x: mapX(p.x),
-              y: mapY(p.y),
-            }))
-          : [];
-
-        if (pts.length > 0) {
-          const strokeW = Math.max(
-            1,
-            Math.min(24, Math.round((Number(obj.strokeWidth) || 3) * worldScale * scaleToNaturalX)),
-          );
-          const isHighlighter = Boolean(obj.isHighlighter);
-
-          if (isHighlighter) {
-            freehandDrawings.push({
-              id: genId(),
-              type: "highlighter",
-              points: pts,
-              color: obj.color || "#FF6B00",
-              width: Math.max(8, strokeW * 2),
-              highlighterStyle: 0,
-            });
-          } else {
-            freehandDrawings.push({
-              id: genId(),
-              type: "pen",
-              points: pts,
-              color: obj.color || "#1E1E1E",
-              width: strokeW,
-              penStyle: 0,
-              opacity: 1,
-            });
-          }
+        if (isHighlighter) {
+          freehandDrawings.push({
+            id: obj.id || genId(),
+            type: "highlighter",
+            points: pts,
+            color: obj.color || "#FF6B00",
+            width: Math.max(8, strokeW * 2),
+            highlighterStyle: 0,
+          });
+        } else {
+          freehandDrawings.push({
+            id: obj.id || genId(),
+            type: "pen",
+            points: pts,
+            color: obj.color || "#1E1E1E",
+            width: strokeW,
+            penStyle: 0,
+            opacity: 1,
+          });
         }
-        break;
       }
+    } else if (rawType === "embeddedImage" || rawType === "image") {
+      if (obj.src) {
+        const wx = mapX(obj.x);
+        const wy = mapY(obj.y);
+        const w = mapDim((obj.w ?? obj.width) || 120);
+        const h = mapDim((obj.h ?? obj.height) || 100, true);
+        const imgObj = new Image();
+        imgObj.src = obj.src;
 
-      case "embeddedImage": {
+        embeddedImages.push({
+          id: obj.id || genId(),
+          type: "image",
+          src: obj.src,
+          img: imgObj,
+          x: wx,
+          y: wy,
+          w,
+          h,
+          rotation: Number(obj.rotation) || 0,
+        });
+      } else {
         const cropDataUrl = cropImageRegion(
           sourceImg,
-          { x: obj.x, y: obj.y, width: obj.width, height: obj.height },
+          {
+            x: obj.x,
+            y: obj.y,
+            width: obj.w ?? obj.width ?? 100,
+            height: obj.h ?? obj.height ?? 100,
+          },
           scaleToNaturalX,
           scaleToNaturalY,
         );
@@ -428,14 +508,14 @@ export function reconstructWhiteboardElements(
         if (cropDataUrl) {
           const wx = mapX(obj.x);
           const wy = mapY(obj.y);
-          const w = mapDim(obj.width || 120);
-          const h = mapDim(obj.height || 100, true);
+          const w = mapDim((obj.w ?? obj.width) || 120);
+          const h = mapDim((obj.h ?? obj.height) || 100, true);
 
           const imgObj = new Image();
           imgObj.src = cropDataUrl;
 
           embeddedImages.push({
-            id: genId(),
+            id: obj.id || genId(),
             type: "image",
             src: cropDataUrl,
             img: imgObj,
@@ -446,7 +526,6 @@ export function reconstructWhiteboardElements(
             rotation: 0,
           });
         }
-        break;
       }
     }
   }

@@ -4367,8 +4367,17 @@ window.__hbiboInit = function (opts) {
         );
       }
 
+      console.log(
+        `[SmartImageImporter] Conversion started for file: ${file.name} (${file.size} bytes)`,
+      );
       const prepared = await importer.prepareImageForAnalysis(file);
       if (isConversionCancelled) return;
+      console.log(
+        `[SmartImageImporter] Original image dimensions: ${prepared.originalImg.naturalWidth}x${prepared.originalImg.naturalHeight}`,
+      );
+      console.log(
+        `[SmartImageImporter] Processed image dimensions: ${prepared.width}x${prepared.height}`,
+      );
       if (progressStatus) progressStatus.textContent = "Recognizing shapes, text & diagrams...";
 
       const aiResult = await importer.analyzeWhiteboardImage(
@@ -4381,6 +4390,9 @@ window.__hbiboInit = function (opts) {
       );
 
       if (isConversionCancelled) return;
+      console.log(
+        `[SmartImageImporter] Number of returned objects from API: ${aiResult.objects?.length || 0}`,
+      );
       if (progressStatus) progressStatus.textContent = "Reconstructing whiteboard objects...";
 
       const targetCenter =
@@ -4388,6 +4400,7 @@ window.__hbiboInit = function (opts) {
       const reconstructed = importer.reconstructWhiteboardElements(aiResult, prepared.originalImg, {
         targetCenter,
       });
+      console.log(`[SmartImageImporter] First reconstructed object:`, reconstructed.elements[0]);
 
       if (isConversionCancelled) return;
 
@@ -4533,6 +4546,9 @@ window.__hbiboInit = function (opts) {
     });
 
     state.elements.push(...elementsToAdd);
+    console.log(
+      `[SmartImageImporter] Final number of objects inserted into the whiteboard: ${elementsToAdd.length}, current board ID: ${state.currentBoardId}`,
+    );
     const newIds = elementsToAdd.map((e) => e.id);
     state.selectedIds = newIds;
     state.selectedId = newIds.length === 1 ? newIds[0] : null;
@@ -4601,6 +4617,9 @@ window.__hbiboInit = function (opts) {
           };
 
     newBoard.elements = elementsToAdd;
+    console.log(
+      `[SmartImageImporter] Final number of objects inserted into the whiteboard: ${elementsToAdd.length}, new whiteboard ID: ${newBoard.id}`,
+    );
 
     const boundsCenterX = reconstructed.bounds.x + reconstructed.bounds.width / 2;
     const boundsCenterY = reconstructed.bounds.y + reconstructed.bounds.height / 2;
