@@ -7,19 +7,15 @@
  * - Flowcharts, mind maps, architecture diagrams, wireframes & sketches
  *
  * Capabilities:
- * - Server-side Gemini Vision API (`@google/genai` with configurable `DEFAULT_GEMINI_VISION_MODEL = "gemini-2.5-flash"`)
- * - OpenRouter Vision integration fallback
- * - Deterministic OCR + Geometric Computer Vision fallback pipeline
+ * - Server-side Gemini Vision API (`@google/genai` with `DEFAULT_GEMINI_VISION_MODEL = "gemini-2.5-flash"`)
  * - Emits exact WhiteboardCanvasObject structures matching the native YY Canvas engine:
  *   (id, type, x, y, w, h, rotation, color, fill, width, text, size, font, bold, italic, underline, bg, points, src)
  */
 
 import { GoogleGenAI } from "@google/genai";
-import { runOcrAndComputerVision } from "./ocr-cv-pipeline";
 
 /**
- * Single configurable constant for default Gemini Vision model.
- * Easy to update if Google updates or retires model aliases.
+ * Default Gemini Vision model.
  */
 export const DEFAULT_GEMINI_VISION_MODEL = "gemini-3.6-flash";
 
@@ -68,7 +64,7 @@ export interface WhiteboardCanvasObject {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
-  bg?: string | undefined; // background color for sticky notes or filled shapes
+  bg?: string; // background color for sticky notes or filled shapes
   points?: Array<{ x: number; y: number }>; // for pen / highlighter
   src?: string; // image source
   opacity?: number;
@@ -88,7 +84,7 @@ export interface ConversionResponse {
   imageWidth: number;
   imageHeight: number;
   objects: WhiteboardCanvasObject[];
-  source: "gemini-vision" | "openrouter-vision" | "deepai-vision" | "ocr-cv" | "fallback";
+  source: "gemini-vision";
   counts: {
     text: number;
     sticky: number;
@@ -153,140 +149,7 @@ function extractAndParseJson(text: string): Record<string, unknown> | null {
 }
 
 /**
- * Parses bounding box format normalized 0..1000, 0..1, or pixel coords.
- */
-function parseBoundingBox(
-  box: unknown,
-  imgWidth: number,
-  imgHeight: number,
-): { x: number; y: number; w: number; h: number } | null {
-  if (!box) return null;
-  if (Array.isArray(box) && box.length >= 4) {
-    const nums = box.map(Number);
-    const v0 = nums[0] ?? NaN;
-    const v1 = nums[1] ?? NaN;
-    const v2 = nums[2] ?? NaN;
-    const v3 = nums[3] ?? NaN;
-    if (isNaN(v0) || isNaN(v1) || isNaN(v2) || isNaN(v3)) return null;
-
-    let x = 0;
-    let y = 0;
-    let w = 0;
-    let h = 0;
-
-    if (v0 <= 1 && v1 <= 1 && v2 <= 1 && v3 <= 1) {
-      // 0..1 normalized [ymin, xmin, ymax, xmax]
-      const ymin = v0 * imgHeight;
-      const xmin = v1 * imgWidth;
-      const ymax = v2 * imgHeight;
-      const xmax = v3 * imgWidth;
-      x = xmin;
-      y = ymin;
-      w = Math.max(16, xmax - xmin);
-      h = Math.max(16, ymax - ymin);
-    } else if (v0 <= 1000 && v1 <= 1000 && v2 <= 1000 && v3 <= 1000 && (v2 > v0 || v3 > v1)) {
-      // 0..1000 normalized [ymin, xmin, ymax, xmax] (Standard Gemini box_2d format)
-      const ymin = (v0 / 1000) * imgHeight;
-      const xmin = (v1 / 1000) * imgWidth;
-      const ymax = (v2 / 1000) * imgHeight;
-      const xmax = (v3 / 1000) * imgWidth;
-      x = xmin;
-      y = ymin;
-      w = Math.max(16, xmax - xmin);
-      h = Math.max(16, ymax - ymin);
-    } else {
-      // Pixel coordinates [ymin, xmin, ymax, xmax] or [x, y, w, h]
-      if (v2 > v0 && v3 > v1 && (v2 <= imgHeight * 1.5 || v3 <= imgWidth * 1.5)) {
-        x = v1;
-        y = v0;
-        w = Math.max(16, v3 - v1);
-        h = Math.max(16, v2 - v0);
-      } else {
-        x = v0;
-        y = v1;
-        w = Math.max(16, v2);
-        h = Math.max(16, v3);
-      }
-    }
-
-    return {
-      x: Math.max(0, Math.min(imgWidth - 10, Math.round(x))),
-      y: Math.max(0, Math.min(imgHeight - 10, Math.round(y))),
-      w: Math.max(16, Math.min(imgWidth, Math.round(w))),
-      h: Math.max(16, Math.min(imgHeight, Math.round(h))),
-    };
-  } else if (typeof box === "object" && box !== null) {
-    const b = box as Record<string, unknown>;
-    const rawX = b["x"] ?? b["xmin"] ?? b["left"];
-    const rawY = b["y"] ?? b["ymin"] ?? b["top"];
-    const rawW = b["w"] ?? b["width"];
-    const rawH = b["h"] ?? b["height"];
-
-    let x = typeof rawX === "number" ? rawX : Number(rawX) || 0;
-    let y = typeof rawY === "number" ? rawY : Number(rawY) || 0;
-    let w =
-      typeof rawW === "number"
-        ? rawW
-        : typeof b["xmax"] === "number"
-          ? (b["xmax"] as number) - x
-          : 120;
-    let h =
-      typeof rawH === "number"
-        ? rawH
-        : typeof b["ymax"] === "number"
-          ? (b["ymax"] as number) - y
-          : 80;
-
-    if (x <= 1 && y <= 1 && w <= 1 && h <= 1) {
-      x *= imgWidth;
-      y *= imgHeight;
-      w *= imgWidth;
-      h *= imgHeight;
-    } else if (x <= 1000 && y <= 1000 && w <= 1000 && h <= 1000 && (x > 1 || y > 1)) {
-      x = (x / 1000) * imgWidth;
-      y = (y / 1000) * imgHeight;
-      w = (w / 1000) * imgWidth;
-      h = (h / 1000) * imgHeight;
-    }
-
-    return {
-      x: Math.max(0, Math.min(imgWidth - 10, Math.round(x))),
-      y: Math.max(0, Math.min(imgHeight - 10, Math.round(y))),
-      w: Math.max(16, Math.min(imgWidth, Math.round(w))),
-      h: Math.max(16, Math.min(imgHeight, Math.round(h))),
-    };
-  }
-  return null;
-}
-
-/**
- * Normalizes raw type string into native WhiteboardCanvasType.
- */
-function normalizeCanvasType(rawType: string): WhiteboardCanvasType {
-  const t = (rawType || "").toLowerCase().trim();
-  if (t === "sticky" || t.includes("post-it") || t.includes("note")) return "sticky";
-  if (t === "text" || t.includes("label") || t.includes("title") || t.includes("heading"))
-    return "text";
-  if (t === "roundrect" || t.includes("rounded")) return "roundRect";
-  if (t === "rect" || t.includes("box") || t.includes("square")) return "rect";
-  if (t === "circle" || t.includes("oval") || t.includes("ellipse")) return "circle";
-  if (t === "triangle" || t.includes("delta")) return "triangle";
-  if (t === "diamond" || t.includes("rhombus") || t.includes("decision")) return "diamond";
-  if (t === "star") return "star";
-  if (t === "hexagon" || t.includes("polygon")) return "hexagon";
-  if (t === "heart") return "heart";
-  if (t === "doublearrow" || t.includes("bidirectional")) return "doubleArrow";
-  if (t === "arrow" || t.includes("pointer")) return "arrow";
-  if (t === "dashed" || t.includes("dotted")) return "dashed";
-  if (t === "line" || t.includes("divider")) return "line";
-  if (t === "highlighter") return "highlighter";
-  if (t === "pen" || t.includes("draw") || t.includes("sketch")) return "pen";
-  if (t === "image" || t.includes("photo") || t.includes("icon")) return "image";
-  return "rect";
-}
-
-/**
- * Processes and normalizes raw AI-detected objects into native WhiteboardCanvasObjects.
+ * Processes and normalizes raw AI-detected objects from Gemini into native WhiteboardCanvasObjects.
  * Maps exact JSON schema from prompt into internal whiteboard element types.
  */
 function processRawAiObjects(
@@ -314,15 +177,10 @@ function processRawAiObjects(
       const rawH = Number(item["height"] ?? item["h"]) || 36;
       const rawFontSize = Number(item["fontSize"] ?? item["size"]) || 18;
 
-      const box =
-        parseBoundingBox(item["box_2d"], width, height) ||
-        parseBoundingBox(item["box"], width, height) ||
-        parseBoundingBox({ x: rawX, y: rawY, w: rawW, h: rawH }, width, height);
-
-      const x = box ? box.x : Math.max(0, Math.round(rawX));
-      const y = box ? box.y : Math.max(0, Math.round(rawY));
-      const w = box ? box.w : Math.max(40, Math.round(rawW));
-      const h = box ? box.h : Math.max(20, Math.round(rawH));
+      const x = Math.max(0, Math.min(width - 10, Math.round(rawX)));
+      const y = Math.max(0, Math.min(height - 10, Math.round(rawY)));
+      const w = Math.max(20, Math.min(width, Math.round(rawW)));
+      const h = Math.max(16, Math.min(height, Math.round(rawH)));
 
       const color =
         typeof item["color"] === "string" && item["color"].startsWith("#")
@@ -356,7 +214,7 @@ function processRawAiObjects(
         isPlaceholder: false,
       });
     }
-    // 2. Rect elements -> native "rect" / "roundRect" shape element type (or sticky note if sticky)
+    // 2. Rect / Sticky elements -> native "rect" / "roundRect" / "sticky" shape element type
     else if (rawType === "rect" || rawType === "roundrect" || rawType === "sticky") {
       const rx = Number(item["rx"]) || 0;
       const isSticky =
@@ -368,15 +226,10 @@ function processRawAiObjects(
       const rawW = Number(item["width"] ?? item["w"]) || (isSticky ? 180 : 120);
       const rawH = Number(item["height"] ?? item["h"]) || (isSticky ? 140 : 80);
 
-      const box =
-        parseBoundingBox(item["box_2d"], width, height) ||
-        parseBoundingBox(item["box"], width, height) ||
-        parseBoundingBox({ x: rawX, y: rawY, w: rawW, h: rawH }, width, height);
-
-      const x = box ? box.x : Math.max(0, Math.round(rawX));
-      const y = box ? box.y : Math.max(0, Math.round(rawY));
-      const w = box ? box.w : Math.max(16, Math.round(rawW));
-      const h = box ? box.h : Math.max(16, Math.round(rawH));
+      const x = Math.max(0, Math.min(width - 10, Math.round(rawX)));
+      const y = Math.max(0, Math.min(height - 10, Math.round(rawY)));
+      const w = Math.max(16, Math.min(width, Math.round(rawW)));
+      const h = Math.max(16, Math.min(height, Math.round(rawH)));
 
       const stroke =
         typeof item["stroke"] === "string" && item["stroke"].startsWith("#")
@@ -470,15 +323,10 @@ function processRawAiObjects(
       const rawX = Number(item["x"]) || 0;
       const rawY = Number(item["y"]) || 0;
 
-      const box =
-        parseBoundingBox(item["box_2d"], width, height) ||
-        parseBoundingBox(item["box"], width, height) ||
-        parseBoundingBox({ x: rawX, y: rawY, w: rawW, h: rawH }, width, height);
-
-      const x = box ? box.x : Math.max(0, Math.round(rawX));
-      const y = box ? box.y : Math.max(0, Math.round(rawY));
-      const w = box ? box.w : Math.max(16, Math.round(rawW));
-      const h = box ? box.h : Math.max(16, Math.round(rawH));
+      const x = Math.max(0, Math.min(width - 10, Math.round(rawX)));
+      const y = Math.max(0, Math.min(height - 10, Math.round(rawY)));
+      const w = Math.max(16, Math.min(width, Math.round(rawW)));
+      const h = Math.max(16, Math.min(height, Math.round(rawH)));
 
       const stroke =
         typeof item["stroke"] === "string" && item["stroke"].startsWith("#")
@@ -538,7 +386,7 @@ function processRawAiObjects(
         });
       }
     }
-    // 4. Line / Arrow / Connector elements -> native "line" / "arrow" element type
+    // 4. Line / Arrow elements -> native "line" / "arrow" element type
     else if (
       rawType === "line" ||
       rawType === "arrow" ||
@@ -547,7 +395,7 @@ function processRawAiObjects(
       rawType === "connector"
     ) {
       const targetType: WhiteboardCanvasType =
-        rawType === "arrow" || rawType === "connector" ? "arrow" : normalizeCanvasType(rawType);
+        rawType === "arrow" || rawType === "connector" ? "arrow" : "line";
 
       const x1 = Number(item["x1"]);
       const y1 = Number(item["y1"]);
@@ -606,68 +454,13 @@ function processRawAiObjects(
         y,
         w,
         h,
+        rotation: 0,
+        color: stroke,
+        width: strokeW,
         startX: sx,
         startY: sy,
         endX: ex,
         endY: ey,
-        rotation: 0,
-        color: stroke,
-        width: strokeW,
-      });
-    }
-    // 5. Other geometric shapes (triangle, diamond, star, hexagon, heart)
-    else {
-      const targetType = normalizeCanvasType(rawType);
-      const rawX = Number(item["x"]) || 0;
-      const rawY = Number(item["y"]) || 0;
-      const rawW = Number(item["width"] ?? item["w"]) || 100;
-      const rawH = Number(item["height"] ?? item["h"]) || 80;
-
-      const box =
-        parseBoundingBox(item["box_2d"], width, height) ||
-        parseBoundingBox(item["box"], width, height) ||
-        parseBoundingBox({ x: rawX, y: rawY, w: rawW, h: rawH }, width, height);
-
-      const x = box ? box.x : Math.max(0, Math.round(rawX));
-      const y = box ? box.y : Math.max(0, Math.round(rawY));
-      const w = box ? box.w : Math.max(16, Math.round(rawW));
-      const h = box ? box.h : Math.max(16, Math.round(rawH));
-
-      const stroke =
-        typeof item["stroke"] === "string" && item["stroke"].startsWith("#")
-          ? item["stroke"]
-          : typeof item["color"] === "string" && item["color"].startsWith("#")
-            ? item["color"]
-            : "#1E1E1E";
-
-      const fillVal = item["fill"];
-      const isFilled = fillVal !== "transparent" && fillVal !== false && Boolean(fillVal);
-      const bg =
-        typeof fillVal === "string" && fillVal.startsWith("#")
-          ? fillVal
-          : typeof item["bg"] === "string" && item["bg"].startsWith("#")
-            ? item["bg"]
-            : isFilled
-              ? stroke
-              : undefined;
-
-      const strokeW = Math.max(
-        1,
-        Math.min(16, Math.round(Number(item["strokeWidth"] ?? item["width"]) || 2)),
-      );
-
-      convertedObjects.push({
-        id: genId(),
-        type: targetType,
-        x,
-        y,
-        w,
-        h,
-        rotation: 0,
-        color: stroke,
-        fill: isFilled,
-        bg: isFilled ? bg : undefined,
-        width: strokeW,
       });
     }
   }
@@ -676,19 +469,24 @@ function processRawAiObjects(
 }
 
 /**
- * Calls Lovable's built-in AI gateway (Gemini Flash tier vision) exactly once per conversion.
- * No user-supplied API key is required — LOVABLE_API_KEY is provisioned by the platform.
+ * Calls server-side Gemini Vision API using @google/genai with gemini-2.5-flash.
+ * Exactly one request per conversion.
  */
-async function callLovableVision(
+async function callGeminiVision(
   rawBase64: string,
   mimeType: string,
   width: number,
   height: number,
-): Promise<{ title: string; objects: WhiteboardCanvasObject[] } | null> {
-  const apiKey = process.env["LOVABLE_API_KEY"];
+): Promise<{ title: string; objects: WhiteboardCanvasObject[] }> {
+  const apiKey = process.env["GEMINI_API_KEY"];
   if (!apiKey) {
-    throw new Error("AI is not configured for this project (missing Lovable AI key).");
+    throw new Error("GEMINI_API_KEY environment variable is missing.");
   }
+
+  const ai = new GoogleGenAI({
+    apiKey,
+    httpOptions: { headers: { "User-Agent": "aistudio-build" } },
+  });
 
   const base64Data = cleanBase64(rawBase64);
   const cleanMime =
@@ -698,16 +496,16 @@ async function callLovableVision(
         ? "image/webp"
         : "image/png";
 
-  const promptText = `Analyze this whiteboard/diagram image (${width}x${height}px).
-Extract all visible text elements, rectangles/boxes/sticky notes, circles/ellipses, and lines/connectors into structured vector elements.
+  const prompt = `Analyze this whiteboard/diagram image (${width}x${height}px).
+Extract all visible text elements, rectangles/boxes, circles/ellipses, and lines/arrows into structured vector elements.
 
 Requirements:
-- x/y are top-left pixel coordinates matching the image's actual pixel dimensions (${width}x${height}).
-- Split text into separate elements the way a human editor would (title vs. paragraph vs. label).
+- x/y are top-left pixel coordinates matching the image dimensions (${width}x${height}).
+- Split text into separate elements (title vs. paragraph vs. label).
 - Estimate font size (fontSize) from how large the text visually appears in pixels.
-- Use the real hex colors seen in the image for fill, stroke, and text colors.
-- Only include shapes and lines that are actually visible in the image.
-- Return raw JSON only, no markdown fences or commentary.
+- Use real hex colors seen in the image for fill, stroke, and text colors.
+- Only include elements actually visible in the image.
+- Return raw JSON only matching the schema.
 
 Output MUST be a single JSON object with this exact schema:
 {
@@ -722,52 +520,73 @@ Output MUST be a single JSON object with this exact schema:
   ]
 }`;
 
-  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "google/gemini-3.7-flash",
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: promptText },
-            {
-              type: "image_url",
-              image_url: { url: `data:${cleanMime};base64,${base64Data}` },
-            },
-          ],
+  const candidateModels = [
+    "gemini-3.1-flash-lite",
+    "gemini-3.7-flash",
+    "gemini-flash-latest",
+    DEFAULT_GEMINI_VISION_MODEL,
+  ];
+
+  let rawText = "";
+  let lastError: Error | null = null;
+
+  for (const modelName of candidateModels) {
+    try {
+      console.log(`[ImageConverter] Calling Gemini Vision model: ${modelName}`);
+      const startTime = Date.now();
+
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  data: base64Data,
+                  mimeType: cleanMime,
+                },
+              },
+            ],
+          },
+        ],
+        config: {
+          responseMimeType: "application/json",
         },
-      ],
-    }),
-  });
+      });
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    console.warn(`[ImageConverter] AI gateway HTTP ${res.status}: ${body.slice(0, 300)}`);
-    if (res.status === 429) {
-      throw new Error("AI rate limit reached. Please wait a moment and try again.");
+      const duration = Date.now() - startTime;
+      rawText = response.text || "";
+      console.log(
+        `[ImageConverter] Gemini Vision (${modelName}) responded in ${duration}ms, response length: ${rawText.length}`,
+      );
+
+      if (rawText.trim()) {
+        break;
+      }
+    } catch (err: unknown) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      console.warn(`[ImageConverter] Model ${modelName} failed:`, lastError.message);
+      // Immediately fallback to next model on error (including 429 rate limit or 404)
     }
-    if (res.status === 402) {
-      throw new Error("AI credits are exhausted for this workspace. Please add credits.");
-    }
-    throw new Error(`AI conversion failed (status ${res.status}).`);
   }
 
-  const json = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const content = json.choices?.[0]?.message?.content;
-  if (!content || !content.trim()) {
-    throw new Error("The AI returned an empty response. Please try again.");
+  if (!rawText.trim()) {
+    if (
+      lastError &&
+      (lastError.message.includes("429") ||
+        lastError.message.includes("RESOURCE_EXHAUSTED") ||
+        lastError.message.includes("Quota exceeded"))
+    ) {
+      throw new Error("Gemini API rate limit reached. Please wait a few seconds and try again.");
+    }
+    throw lastError || new Error("Gemini returned an empty response.");
   }
 
-  const parsed = extractAndParseJson(content);
+  const parsed = extractAndParseJson(rawText);
   if (!parsed) {
-    throw new Error("The AI returned an invalid response. Please try again.");
+    throw new Error("Failed to parse JSON response from Gemini.");
   }
 
   const rawElements = Array.isArray(parsed["elements"])
@@ -776,7 +595,13 @@ Output MUST be a single JSON object with this exact schema:
       ? (parsed["objects"] as Array<Record<string, unknown>>)
       : [];
 
+  console.log(`[ImageConverter] Parsed ${rawElements.length} raw elements from Gemini Vision`);
+
   const convertedObjects = processRawAiObjects(rawElements, width, height);
+
+  if (convertedObjects.length === 0) {
+    throw new Error("No editable whiteboard elements could be detected in the uploaded image.");
+  }
 
   return {
     title: typeof parsed["title"] === "string" ? parsed["title"] : "Imported Whiteboard",
@@ -784,13 +609,11 @@ Output MUST be a single JSON object with this exact schema:
   };
 }
 
-
 export function compileConversionResponse(
   title: string,
   width: number,
   height: number,
   validObjects: WhiteboardCanvasObject[],
-  source: "gemini-vision" | "openrouter-vision" | "deepai-vision" | "ocr-cv" | "fallback",
 ): ConversionResponse {
   let textCount = 0;
   let stickyCount = 0;
@@ -799,24 +622,12 @@ export function compileConversionResponse(
   let drawingsCount = 0;
   let imagesCount = 0;
 
-  const shapeTypes = new Set([
-    "rect",
-    "roundRect",
-    "circle",
-    "ellipse",
-    "triangle",
-    "diamond",
-    "star",
-    "hexagon",
-    "heart",
-  ]);
-  const connectorTypes = new Set(["line", "arrow", "doubleArrow", "dashed"]);
-
   for (const obj of validObjects) {
     if (obj.type === "text") textCount++;
     else if (obj.type === "sticky") stickyCount++;
-    else if (shapeTypes.has(obj.type)) shapesCount++;
-    else if (connectorTypes.has(obj.type)) connectorsCount++;
+    else if (obj.type === "rect" || obj.type === "roundRect" || obj.type === "circle")
+      shapesCount++;
+    else if (obj.type === "line" || obj.type === "arrow") connectorsCount++;
     else if (obj.type === "pen" || obj.type === "highlighter") drawingsCount++;
     else if (obj.type === "image") imagesCount++;
   }
@@ -826,7 +637,7 @@ export function compileConversionResponse(
     imageWidth: width,
     imageHeight: height,
     objects: validObjects,
-    source,
+    source: "gemini-vision",
     counts: {
       text: textCount,
       sticky: stickyCount,
@@ -841,25 +652,22 @@ export function compileConversionResponse(
 
 /**
  * Converts a whiteboard image / screenshot / diagram into native, editable whiteboard objects.
- * Exactly ONE AI call per conversion, via Lovable's built-in AI gateway.
- * Never falls back to a flat image: failures throw so the UI can show an inline error.
+ * Exactly one Gemini 2.5 flash call. Never returns a flat image fallback.
  */
 export async function convertWhiteboardImage(
   req: ConvertImageRequest,
 ): Promise<ConversionResponse> {
   const { width, height, imageBase64, mimeType } = req;
 
-  console.log(`[ImageConverter] Conversion started (${width}x${height}, ${mimeType})`);
+  console.log(`[ImageConverter] ========================================`);
+  console.log(`[ImageConverter] Conversion started`);
+  console.log(`[ImageConverter] Target image dimensions: ${width}x${height}`);
 
-  const result = await callLovableVision(imageBase64, mimeType, width, height);
+  const geminiResult = await callGeminiVision(imageBase64, mimeType, width, height);
 
-  if (!result || result.objects.length === 0) {
-    throw new Error(
-      "The AI could not extract any editable elements from this image. Please try a clearer image.",
-    );
-  }
+  console.log(
+    `[ImageConverter] Successfully extracted ${geminiResult.objects.length} editable objects via Gemini 2.5 Flash`,
+  );
 
-  console.log(`[ImageConverter] Extracted ${result.objects.length} editable objects`);
-  return compileConversionResponse(result.title, width, height, result.objects, "gemini-vision");
+  return compileConversionResponse(geminiResult.title, width, height, geminiResult.objects);
 }
-
