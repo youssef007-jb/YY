@@ -68,7 +68,7 @@ export interface WhiteboardCanvasObject {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
-  bg?: string; // background color for sticky notes or filled shapes
+  bg?: string | undefined; // background color for sticky notes or filled shapes
   points?: Array<{ x: number; y: number }>; // for pen / highlighter
   src?: string; // image source
   opacity?: number;

@@ -466,6 +466,7 @@ export class BatchConversionQueue {
 
       for (let pIdx = 0; pIdx < pages.length; pIdx++) {
         const page = pages[pIdx];
+        if (!page) continue;
         item.statusText = `Reconstructing page ${pIdx + 1} of ${pages.length}...`;
         this.emitProgress();
 

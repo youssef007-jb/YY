@@ -141,7 +141,7 @@ export async function analyzeWhiteboardImage(
     headers: {
       "Content-Type": "application/json",
     },
-    signal,
+    ...(signal ? { signal } : {}),
     body: JSON.stringify({
       imageBase64: imageInfo.base64,
       mimeType: imageInfo.mimeType,
