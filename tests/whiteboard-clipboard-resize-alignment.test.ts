@@ -126,7 +126,13 @@ describe("Whiteboard Core Invariants: Clipboard, Resize Handles & Text Alignment
 
       // Mouse clicks directly on handleWorld
       const mouseWorld = { ...handleWorld };
-      const rot = rotatePoint(mouseWorld.x - pOppWorld.x, mouseWorld.y - pOppWorld.y, 0, 0, -rotEl.rotation);
+      const rot = rotatePoint(
+        mouseWorld.x - pOppWorld.x,
+        mouseWorld.y - pOppWorld.y,
+        0,
+        0,
+        -rotEl.rotation,
+      );
       const rawLocalMouse = { x: pOppLocal.x + rot.x, y: pOppLocal.y + rot.y };
 
       // Grab offset when clicking directly on handle is exactly (0, 0)
@@ -136,8 +142,17 @@ describe("Whiteboard Core Invariants: Clipboard, Resize Handles & Text Alignment
 
       // When dragging by +50 in world X and +50 in world Y:
       const movedMouseWorld = { x: handleWorld.x + 50, y: handleWorld.y + 50 };
-      const rotMoved = rotatePoint(movedMouseWorld.x - pOppWorld.x, movedMouseWorld.y - pOppWorld.y, 0, 0, -rotEl.rotation);
-      const targetH = { x: pOppLocal.x + rotMoved.x - grabOffset.x, y: pOppLocal.y + rotMoved.y - grabOffset.y };
+      const rotMoved = rotatePoint(
+        movedMouseWorld.x - pOppWorld.x,
+        movedMouseWorld.y - pOppWorld.y,
+        0,
+        0,
+        -rotEl.rotation,
+      );
+      const targetH = {
+        x: pOppLocal.x + rotMoved.x - grabOffset.x,
+        y: pOppLocal.y + rotMoved.y - grabOffset.y,
+      };
 
       const nw = targetH.x - pad - rotEl.x;
       const nh = targetH.y - pad - rotEl.y;
@@ -152,7 +167,13 @@ describe("Whiteboard Core Invariants: Clipboard, Resize Handles & Text Alignment
       // The new bottom-right handle rendered in world space
       const newHandleLocal = { x: nx + nw + pad, y: ny + nh + pad };
       const newCenter = { x: nx + nw / 2, y: ny + nh / 2 };
-      const newHandleWorld = rotatePoint(newHandleLocal.x, newHandleLocal.y, newCenter.x, newCenter.y, rotEl.rotation);
+      const newHandleWorld = rotatePoint(
+        newHandleLocal.x,
+        newHandleLocal.y,
+        newCenter.x,
+        newCenter.y,
+        rotEl.rotation,
+      );
 
       // Verify handle world pos exactly matches mouse position
       expect(Math.abs(newHandleWorld.x - movedMouseWorld.x)).toBeLessThan(1e-5);

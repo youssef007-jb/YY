@@ -3147,43 +3147,157 @@ window.__hbiboInit = function (opts) {
     if (overlayCtx) renderOverlay();
   }
   function getMultiBounds(ids) {
-    let minX = Infinity,
-      minY = Infinity,
-      maxX = -Infinity,
-      maxY = -Infinity;
-    (ids || []).forEach((id) => {
-      const el = state.elements.find((x) => x.id === id);
-      if (!el) return;
-      const b = getBounds(el);
-      minX = Math.min(minX, b.x);
-      minY = Math.min(minY, b.y);
-      maxX = Math.max(maxX, b.x + b.w);
-      maxY = Math.max(maxY, b.y + b.h);
+    if (!ids || ids.length === 0) return { x: 0, y: 0, w: 0, h: 0, rotation: 0, cx: 0, cy: 0 };
+    const els = ids.map((id) => state.elements.find((x) => x.id === id)).filter(Boolean);
+    if (els.length === 0) return { x: 0, y: 0, w: 0, h: 0, rotation: 0, cx: 0, cy: 0 };
+
+    const firstRot = els[0].rotation || 0;
+    const hasSameRot = els.every((el) => {
+      const diff = Math.abs((((el.rotation || 0) - firstRot + 540) % 360) - 180);
+      return diff < 0.01;
     });
-    if (minX === Infinity) return { x: 0, y: 0, w: 0, h: 0 };
-    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+
+    let groupRot = 0;
+    if (hasSameRot && Math.abs(firstRot) > 0.001) {
+      groupRot = firstRot;
+    } else if (
+      state.isTransforming &&
+      state.transform.mode === "rotateMulti" &&
+      state.transform.groupRotation != null
+    ) {
+      groupRot = state.transform.groupRotation;
+    }
+
+    if (!groupRot) {
+      let minX = Infinity,
+        minY = Infinity,
+        maxX = -Infinity,
+        maxY = -Infinity;
+      els.forEach((el) => {
+        const b = getBounds(el);
+        if (el.rotation) {
+          const cx = b.x + b.w / 2,
+            cy = b.y + b.h / 2;
+          const pts = [
+            { x: b.x, y: b.y },
+            { x: b.x + b.w, y: b.y },
+            { x: b.x + b.w, y: b.y + b.h },
+            { x: b.x, y: b.y + b.h },
+          ];
+          pts.forEach((p) => {
+            const rp = rotatePoint(p.x, p.y, cx, cy, el.rotation);
+            minX = Math.min(minX, rp.x);
+            minY = Math.min(minY, rp.y);
+            maxX = Math.max(maxX, rp.x);
+            maxY = Math.max(maxY, rp.y);
+          });
+        } else {
+          minX = Math.min(minX, b.x);
+          minY = Math.min(minY, b.y);
+          maxX = Math.max(maxX, b.x + b.w);
+          maxY = Math.max(maxY, b.y + b.h);
+        }
+      });
+      if (minX === Infinity) return { x: 0, y: 0, w: 0, h: 0, rotation: 0, cx: 0, cy: 0 };
+      const w = maxX - minX,
+        h = maxY - minY;
+      return { x: minX, y: minY, w, h, rotation: 0, cx: minX + w / 2, cy: minY + h / 2 };
+    }
+
+    let sumX = 0,
+      sumY = 0,
+      count = 0;
+    els.forEach((el) => {
+      const b = getBounds(el);
+      sumX += b.x + b.w / 2;
+      sumY += b.y + b.h / 2;
+      count++;
+    });
+    const cGroup = { x: sumX / Math.max(1, count), y: sumY / Math.max(1, count) };
+
+    let minLx = Infinity,
+      minLy = Infinity,
+      maxLx = -Infinity,
+      maxLy = -Infinity;
+    els.forEach((el) => {
+      const b = getBounds(el);
+      const elCenter = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+      let worldPts = [];
+      if (LINE_TYPES.includes(el.type)) {
+        worldPts = [
+          { x: el.x, y: el.y },
+          { x: el.x + el.w, y: el.y + el.h },
+        ];
+      } else if (STROKE_TYPES.includes(el.type) && el.points) {
+        worldPts = el.points;
+      } else {
+        const rawCorners = [
+          { x: b.x, y: b.y },
+          { x: b.x + b.w, y: b.y },
+          { x: b.x + b.w, y: b.y + b.h },
+          { x: b.x, y: b.y + b.h },
+        ];
+        if (el.rotation) {
+          worldPts = rawCorners.map((p) =>
+            rotatePoint(p.x, p.y, elCenter.x, elCenter.y, el.rotation),
+          );
+        } else {
+          worldPts = rawCorners;
+        }
+      }
+      worldPts.forEach((wp) => {
+        const lp = rotatePoint(wp.x, wp.y, cGroup.x, cGroup.y, -groupRot);
+        minLx = Math.min(minLx, lp.x);
+        minLy = Math.min(minLy, lp.y);
+        maxLx = Math.max(maxLx, lp.x);
+        maxLy = Math.max(maxLy, lp.y);
+      });
+    });
+
+    if (minLx === Infinity) return { x: 0, y: 0, w: 0, h: 0, rotation: 0, cx: 0, cy: 0 };
+    const lw = maxLx - minLx,
+      lh = maxLy - minLy;
+    const localCenter = { x: (minLx + maxLx) / 2, y: (minLy + maxLy) / 2 };
+    const worldCenter = rotatePoint(localCenter.x, localCenter.y, cGroup.x, cGroup.y, groupRot);
+    const localX = worldCenter.x - lw / 2;
+    const localY = worldCenter.y - lh / 2;
+
+    return {
+      x: localX,
+      y: localY,
+      w: lw,
+      h: lh,
+      rotation: groupRot,
+      cx: worldCenter.x,
+      cy: worldCenter.y,
+    };
   }
   function drawMultiSelectionUnified(ids) {
     const b = getMultiBounds(ids);
     if (b.w <= 0 || b.h <= 0) return;
     const z = Math.max(0.05, state.camera.zoom);
     const pad = 8 / z;
-    const cx = b.x + b.w / 2,
-      cy = b.y + b.h / 2;
+    const cx = b.cx != null ? b.cx : b.x + b.w / 2,
+      cy = b.cy != null ? b.cy : b.y + b.h / 2;
     ctx.save();
+    if (b.rotation) {
+      ctx.translate(cx, cy);
+      ctx.rotate((b.rotation * Math.PI) / 180);
+      ctx.translate(-cx, -cy);
+    }
     ctx.strokeStyle = "#2563eb";
     ctx.lineWidth = 1.5 / z;
     ctx.setLineDash([6 / z, 4 / z]);
     ctx.strokeRect(b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2);
     ctx.setLineDash([]);
-    const hs = 5.5 / z;
+    const hs = 5 / z;
     function handle(x, y, isHovered = false) {
       const r = isHovered ? hs * 1.12 : hs;
       ctx.beginPath();
       ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fillStyle = isHovered ? "#2563eb" : "#ffffff";
+      ctx.fillStyle = isHovered ? "#2563eb" : "#fff";
       ctx.strokeStyle = "#2563eb";
-      ctx.lineWidth = 1.5 / z;
+      ctx.lineWidth = 1.4 / z;
       ctx.fill();
       ctx.stroke();
     }
@@ -3209,7 +3323,18 @@ window.__hbiboInit = function (opts) {
           state.transform.handle.idx === i);
       handle(pt.x, pt.y, isHovered);
     });
-    sides.forEach((pt) => handle(pt.x, pt.y, false));
+    sides.forEach((pt, i) => {
+      const isHovered =
+        (state.hoveredHandle &&
+          state.hoveredHandle.isMulti &&
+          state.hoveredHandle.type === "side" &&
+          state.hoveredHandle.idx === i) ||
+        (state.isTransforming &&
+          state.transform.mode === "sideMulti" &&
+          state.transform.handle &&
+          state.transform.handle.idx === i);
+      handle(pt.x, pt.y, isHovered);
+    });
     const rhX = b.x + b.w / 2,
       rhY = b.y + b.h + pad + 20 / z;
     ctx.strokeStyle = "#2563eb";
@@ -3224,9 +3349,11 @@ window.__hbiboInit = function (opts) {
     handle(rhX, rhY, isRotHovered);
     ctx.restore();
     state._multiHandles = {
-      corners,
-      sides,
-      rot: { x: rhX, y: rhY },
+      corners: b.rotation
+        ? corners.map((pt) => rotatePoint(pt.x, pt.y, cx, cy, b.rotation))
+        : corners,
+      sides: b.rotation ? sides.map((pt) => rotatePoint(pt.x, pt.y, cx, cy, b.rotation)) : sides,
+      rot: b.rotation ? rotatePoint(rhX, rhY, cx, cy, b.rotation) : { x: rhX, y: rhY },
       center: { x: cx, y: cy },
       bounds: b,
     };
@@ -3273,20 +3400,35 @@ window.__hbiboInit = function (opts) {
   function drawSelection(el) {
     if (LINE_TYPES.includes(el.type)) {
       const z = Math.max(0.05, state.camera.zoom);
-      const hs = 6 / z;
+      const hs = 5 / z;
+      function handle(x, y, isHovered = false) {
+        const r = isHovered ? hs * 1.12 : hs;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fillStyle = isHovered ? "#2563eb" : "#fff";
+        ctx.strokeStyle = "#2563eb";
+        ctx.lineWidth = 1.4 / z;
+        ctx.fill();
+        ctx.stroke();
+      }
       const pts = [
         { x: el.x, y: el.y },
         { x: el.x + el.w, y: el.y + el.h },
       ];
       ctx.save();
-      ctx.strokeStyle = "#2563eb";
-      ctx.lineWidth = 1.25 / z;
-      pts.forEach((pt) => {
-        ctx.beginPath();
-        ctx.arc(pt.x, pt.y, hs, 0, Math.PI * 2);
-        ctx.fillStyle = "#fff";
-        ctx.fill();
-        ctx.stroke();
+      pts.forEach((pt, i) => {
+        const isHovered =
+          (state.hoveredHandle &&
+            !state.hoveredHandle.isMulti &&
+            state.hoveredHandle.elId === el.id &&
+            state.hoveredHandle.type === "endpoint" &&
+            state.hoveredHandle.idx === i) ||
+          (state.isTransforming &&
+            state.selectedId === el.id &&
+            state.transform.mode === "endpoint" &&
+            state.transform.handle &&
+            state.transform.handle.idx === i);
+        handle(pt.x, pt.y, isHovered);
       });
       ctx.restore();
       el._handles = {
@@ -3431,10 +3573,14 @@ window.__hbiboInit = function (opts) {
       const b = getMultiBounds(state.selectedIds);
       if (b.w > 0 && b.h > 0) {
         const pad = 8 / z;
+        const cx = b.cx != null ? b.cx : b.x + b.w / 2;
+        const cy = b.cy != null ? b.cy : b.y + b.h / 2;
+        const localWp = b.rotation ? rotatePoint(wp.x, wp.y, cx, cy, -b.rotation) : wp;
         const rhX = b.x + b.w / 2,
           rhY = b.y + b.h + pad + 20 / z;
-        if (Math.hypot(wp.x - rhX, wp.y - rhY) < tol + 6)
-          return { mode: "rotateMulti", handlePos: { x: rhX, y: rhY } };
+        const rhWorld = b.rotation ? rotatePoint(rhX, rhY, cx, cy, b.rotation) : { x: rhX, y: rhY };
+        if (Math.hypot(localWp.x - rhX, localWp.y - rhY) < tol + 6)
+          return { mode: "rotateMulti", handlePos: rhWorld };
         const corners = [
           { x: b.x - pad, y: b.y - pad },
           { x: b.x + b.w + pad, y: b.y - pad },
@@ -3442,16 +3588,24 @@ window.__hbiboInit = function (opts) {
           { x: b.x - pad, y: b.y + b.h + pad },
         ];
         for (let i = 0; i < corners.length; i++) {
-          if (Math.hypot(wp.x - corners[i].x, wp.y - corners[i].y) < tol)
-            return { mode: "resizeMulti", idx: i, type: "corner", handlePos: corners[i], pad };
+          if (Math.hypot(localWp.x - corners[i].x, localWp.y - corners[i].y) < tol) {
+            const cornerWorld = b.rotation
+              ? rotatePoint(corners[i].x, corners[i].y, cx, cy, b.rotation)
+              : corners[i];
+            return { mode: "resizeMulti", idx: i, type: "corner", handlePos: cornerWorld, pad };
+          }
         }
         const sides = [
           { x: b.x - pad, y: b.y + b.h / 2 },
           { x: b.x + b.w + pad, y: b.y + b.h / 2 },
         ];
         for (let i = 0; i < sides.length; i++) {
-          if (Math.hypot(wp.x - sides[i].x, wp.y - sides[i].y) < tol)
-            return { mode: "sideMulti", idx: i, type: "side", handlePos: sides[i], pad };
+          if (Math.hypot(localWp.x - sides[i].x, localWp.y - sides[i].y) < tol) {
+            const sideWorld = b.rotation
+              ? rotatePoint(sides[i].x, sides[i].y, cx, cy, b.rotation)
+              : sides[i];
+            return { mode: "sideMulti", idx: i, type: "side", handlePos: sideWorld, pad };
+          }
         }
       }
       return null;
@@ -5913,16 +6067,56 @@ window.__hbiboInit = function (opts) {
             state.transform.handle = hh;
             state.transform.startMouse = { ...wPos };
             state.transform.pad = hh.pad;
+            state.transform.startMultiBounds = getMultiBounds(state.selectedIds);
+            const sb = state.transform.startMultiBounds;
+            state.transform.center = { x: sb.cx, y: sb.cy };
+            state.transform.startGroupRotation = sb.rotation || 0;
             if (hh.handlePos) {
-              state.transform.grabOffset = {
-                x: wPos.x - hh.handlePos.x,
-                y: wPos.y - hh.handlePos.y,
-              };
+              if (sb.rotation && (hh.mode === "resizeMulti" || hh.mode === "sideMulti")) {
+                const c0 = { x: sb.cx, y: sb.cy };
+                const idx = hh.idx;
+                const isSide = hh.mode === "sideMulti";
+                let pOppLocal;
+                if (isSide) {
+                  pOppLocal =
+                    idx === 0
+                      ? { x: sb.x + sb.w, y: sb.y + sb.h / 2 }
+                      : { x: sb.x, y: sb.y + sb.h / 2 };
+                } else {
+                  if (idx === 0) pOppLocal = { x: sb.x + sb.w, y: sb.y + sb.h };
+                  else if (idx === 1) pOppLocal = { x: sb.x, y: sb.y + sb.h };
+                  else if (idx === 2) pOppLocal = { x: sb.x, y: sb.y };
+                  else pOppLocal = { x: sb.x + sb.w, y: sb.y };
+                }
+                const pOppWorld = rotatePoint(pOppLocal.x, pOppLocal.y, c0.x, c0.y, sb.rotation);
+                const rot = rotatePoint(
+                  wPos.x - pOppWorld.x,
+                  wPos.y - pOppWorld.y,
+                  0,
+                  0,
+                  -sb.rotation,
+                );
+                const startLocalMouse = { x: pOppLocal.x + rot.x, y: pOppLocal.y + rot.y };
+                const handleLocal = rotatePoint(
+                  hh.handlePos.x,
+                  hh.handlePos.y,
+                  c0.x,
+                  c0.y,
+                  -sb.rotation,
+                );
+                state.transform.grabOffset = {
+                  x: startLocalMouse.x - handleLocal.x,
+                  y: startLocalMouse.y - handleLocal.y,
+                };
+              } else {
+                state.transform.grabOffset = {
+                  x: wPos.x - hh.handlePos.x,
+                  y: wPos.y - hh.handlePos.y,
+                };
+              }
             } else {
               state.transform.grabOffset = { x: 0, y: 0 };
             }
-            state.transform.startMultiBounds = getMultiBounds(state.selectedIds);
-            state.transform.center = getCenter(state.transform.startMultiBounds);
             state.transform.startMulti = state.selectedIds
               .map((id) => {
                 const el = state.elements.find((x) => x.id === id);
@@ -5934,6 +6128,7 @@ window.__hbiboInit = function (opts) {
                       w: el.w,
                       h: el.h,
                       size: el.size,
+                      boxWidth: el.boxWidth,
                       rotation: el.rotation || 0,
                       points: el.points ? el.points.map((pt) => ({ ...pt })) : null,
                     }
@@ -6298,6 +6493,8 @@ window.__hbiboInit = function (opts) {
         const hh = hitHandles(null, wPos);
         if (hh && hh.type === "corner") {
           nextHoveredHandle = { isMulti: true, type: "corner", idx: hh.idx };
+        } else if (hh && hh.type === "side") {
+          nextHoveredHandle = { isMulti: true, type: "side", idx: hh.idx };
         } else if (hh && hh.mode === "rotateMulti") {
           nextHoveredHandle = { isMulti: true, type: "rot" };
         }
@@ -6332,11 +6529,14 @@ window.__hbiboInit = function (opts) {
           const hh = hitHandles(sel, wPos);
           if (hh && hh.type === "side") {
             nextHoveredSide = { elId: sel.id, side: hh.idx };
+            nextHoveredHandle = { elId: sel.id, type: "side", idx: hh.idx };
           }
           if (hh && hh.type === "corner") {
             nextHoveredHandle = { elId: sel.id, type: "corner", idx: hh.idx };
           } else if (hh && hh.mode === "rotate") {
             nextHoveredHandle = { elId: sel.id, type: "rot" };
+          } else if (hh && hh.mode === "endpoint") {
+            nextHoveredHandle = { elId: sel.id, type: "endpoint", idx: hh.idx };
           }
           const prev = state.hoveredTextSide;
           const changed =
@@ -6437,69 +6637,207 @@ window.__hbiboInit = function (opts) {
           const idx = state.transform.handle.idx;
           const isSide = state.transform.mode === "sideMulti";
           const MIN_DIM = 20;
+          const c0 = {
+            x: sb.cx != null ? sb.cx : sb.x + sb.w / 2,
+            y: sb.cy != null ? sb.cy : sb.y + sb.h / 2,
+          };
+
+          let pOppLocal;
+          if (isSide) {
+            pOppLocal =
+              idx === 0 ? { x: sb.x + sb.w, y: sb.y + sb.h / 2 } : { x: sb.x, y: sb.y + sb.h / 2 };
+          } else {
+            if (idx === 0) pOppLocal = { x: sb.x + sb.w, y: sb.y + sb.h };
+            else if (idx === 1) pOppLocal = { x: sb.x, y: sb.y + sb.h };
+            else if (idx === 2) pOppLocal = { x: sb.x, y: sb.y };
+            else pOppLocal = { x: sb.x + sb.w, y: sb.y };
+          }
+
+          let localPointer;
+          if (sb.rotation) {
+            const pOppWorld = rotatePoint(pOppLocal.x, pOppLocal.y, c0.x, c0.y, sb.rotation);
+            const rot = rotatePoint(wPos.x - pOppWorld.x, wPos.y - pOppWorld.y, 0, 0, -sb.rotation);
+            localPointer = {
+              x:
+                pOppLocal.x +
+                rot.x -
+                (state.transform.grabOffset ? state.transform.grabOffset.x : 0),
+              y:
+                pOppLocal.y +
+                rot.y -
+                (state.transform.grabOffset ? state.transform.grabOffset.y : 0),
+            };
+          } else {
+            localPointer = {
+              x: wPos.x - (state.transform.grabOffset ? state.transform.grabOffset.x : 0),
+              y: wPos.y - (state.transform.grabOffset ? state.transform.grabOffset.y : 0),
+            };
+          }
+
           let nx = sb.x,
             ny = sb.y,
             nw = sb.w,
             nh = sb.h;
           if (!isSide) {
             if (idx === 0) {
-              nx = Math.min(wPos.x, sb.x + sb.w - MIN_DIM);
-              ny = Math.min(wPos.y, sb.y + sb.h - MIN_DIM);
+              nx = Math.min(localPointer.x, sb.x + sb.w - MIN_DIM);
+              ny = Math.min(localPointer.y, sb.y + sb.h - MIN_DIM);
               nw = sb.x + sb.w - nx;
               nh = sb.y + sb.h - ny;
             } else if (idx === 1) {
               nx = sb.x;
-              ny = Math.min(wPos.y, sb.y + sb.h - MIN_DIM);
-              nw = Math.max(wPos.x, sb.x + MIN_DIM) - sb.x;
+              ny = Math.min(localPointer.y, sb.y + sb.h - MIN_DIM);
+              nw = Math.max(localPointer.x, sb.x + MIN_DIM) - sb.x;
               nh = sb.y + sb.h - ny;
             } else if (idx === 2) {
               nx = sb.x;
               ny = sb.y;
-              nw = Math.max(wPos.x, sb.x + MIN_DIM) - sb.x;
-              nh = Math.max(wPos.y, sb.y + MIN_DIM) - sb.y;
+              nw = Math.max(localPointer.x, sb.x + MIN_DIM) - sb.x;
+              nh = Math.max(localPointer.y, sb.y + MIN_DIM) - sb.y;
             } else {
-              nx = Math.min(wPos.x, sb.x + sb.w - MIN_DIM);
+              nx = Math.min(localPointer.x, sb.x + sb.w - MIN_DIM);
               ny = sb.y;
               nw = sb.x + sb.w - nx;
-              nh = Math.max(wPos.y, sb.y + MIN_DIM) - sb.y;
+              nh = Math.max(localPointer.y, sb.y + MIN_DIM) - sb.y;
             }
           } else {
             if (idx === 0) {
-              nx = Math.min(wPos.x, sb.x + sb.w - MIN_DIM);
+              nx = Math.min(localPointer.x, sb.x + sb.w - MIN_DIM);
               nw = sb.x + sb.w - nx;
             } else {
               nx = sb.x;
-              nw = Math.max(wPos.x, sb.x + MIN_DIM) - sb.x;
+              nw = Math.max(localPointer.x, sb.x + MIN_DIM) - sb.x;
             }
           }
           nw = Math.max(MIN_DIM, nw);
           nh = Math.max(MIN_DIM, nh);
-          const scaleX = nw / Math.max(1, sb.w);
-          const scaleY = isSide ? 1 : nh / Math.max(1, sb.h);
-          (state.transform.startMulti || []).forEach((st) => {
-            const item = state.elements.find((x) => x.id === st.id);
-            if (!item || item.locked) return;
-            if (st.points) {
-              item.points = st.points.map((p) => ({
-                x: nx + (p.x - sb.x) * scaleX,
-                y: ny + (p.y - sb.y) * scaleY,
-              }));
+
+          const isMultiText =
+            state.selectedIds.length > 1 &&
+            (state.transform.startMulti || []).length > 0 &&
+            (state.transform.startMulti || []).every((st) => {
+              const item = state.elements.find((x) => x.id === st.id);
+              return item && item.type === "text";
+            });
+
+          if (isMultiText && !isSide) {
+            const rawScaleX = nw / Math.max(1, sb.w);
+            const rawScaleY = nh / Math.max(1, sb.h);
+            const uniformScale = Math.max(0.05, (rawScaleX + rawScaleY) / 2);
+            const uniformW = sb.w * uniformScale;
+            const uniformH = sb.h * uniformScale;
+
+            if (idx === 0) {
+              nx = sb.x + sb.w - uniformW;
+              ny = sb.y + sb.h - uniformH;
+            } else if (idx === 1) {
+              nx = sb.x;
+              ny = sb.y + sb.h - uniformH;
+            } else if (idx === 2) {
+              nx = sb.x;
+              ny = sb.y;
             } else {
-              item.x = nx + (st.x - sb.x) * scaleX;
-              item.y = ny + (st.y - sb.y) * scaleY;
-              item.w = Math.max(8, (st.w || 100) * scaleX);
-              item.h = Math.max(8, (st.h || 100) * scaleY);
-              if (item.type === "text" || item.type === "sticky") {
-                const fontScale = isSide ? scaleX : (scaleX + scaleY) / 2;
-                item.size = clamp(
-                  Math.round((st.size || (item.type === "sticky" ? 16 : 18)) * fontScale),
-                  8,
-                  400,
-                );
-                if (item.type === "text") fitTextElement(item);
-              }
+              nx = sb.x + sb.w - uniformW;
+              ny = sb.y;
             }
-          });
+            nw = uniformW;
+            nh = uniformH;
+
+            (state.transform.startMulti || []).forEach((st) => {
+              const item = state.elements.find((x) => x.id === st.id);
+              if (!item || item.locked) return;
+              if (sb.rotation) {
+                const stCenter = { x: st.x + (st.w || 0) / 2, y: st.y + (st.h || 0) / 2 };
+                const localStCenter = rotatePoint(stCenter.x, stCenter.y, c0.x, c0.y, -sb.rotation);
+                const newLocalCenterX = nx + (localStCenter.x - sb.x) * uniformScale;
+                const newLocalCenterY = ny + (localStCenter.y - sb.y) * uniformScale;
+                const pOppWorld = rotatePoint(pOppLocal.x, pOppLocal.y, c0.x, c0.y, sb.rotation);
+                const dx = newLocalCenterX - pOppLocal.x;
+                const dy = newLocalCenterY - pOppLocal.y;
+                const rotOffset = rotatePoint(dx, dy, 0, 0, sb.rotation);
+                const worldItemCenterX = pOppWorld.x + rotOffset.x;
+                const worldItemCenterY = pOppWorld.y + rotOffset.y;
+                item.size = clamp(Math.round((st.size || 18) * uniformScale), 6, 400);
+                if (isManualWidthText(st)) {
+                  item.boxWidth = Math.max(8, (st.boxWidth || st.w) * uniformScale);
+                }
+                fitTextElement(item);
+                item.x = worldItemCenterX - item.w / 2;
+                item.y = worldItemCenterY - item.h / 2;
+              } else {
+                item.x = nx + (st.x - sb.x) * uniformScale;
+                item.y = ny + (st.y - sb.y) * uniformScale;
+                item.size = clamp(Math.round((st.size || 18) * uniformScale), 6, 400);
+                if (isManualWidthText(st)) {
+                  item.boxWidth = Math.max(8, (st.boxWidth || st.w) * uniformScale);
+                }
+                fitTextElement(item);
+              }
+            });
+          } else {
+            const scaleX = nw / Math.max(1, sb.w);
+            const scaleY = isSide ? 1 : nh / Math.max(1, sb.h);
+            (state.transform.startMulti || []).forEach((st) => {
+              const item = state.elements.find((x) => x.id === st.id);
+              if (!item || item.locked) return;
+              if (sb.rotation) {
+                const stCenter = { x: st.x + (st.w || 0) / 2, y: st.y + (st.h || 0) / 2 };
+                const localStCenter = rotatePoint(stCenter.x, stCenter.y, c0.x, c0.y, -sb.rotation);
+                const newLocalCenterX = nx + (localStCenter.x - sb.x) * scaleX;
+                const newLocalCenterY = ny + (localStCenter.y - sb.y) * scaleY;
+                const pOppWorld = rotatePoint(pOppLocal.x, pOppLocal.y, c0.x, c0.y, sb.rotation);
+                const dx = newLocalCenterX - pOppLocal.x;
+                const dy = newLocalCenterY - pOppLocal.y;
+                const rotOffset = rotatePoint(dx, dy, 0, 0, sb.rotation);
+                const worldItemCenterX = pOppWorld.x + rotOffset.x;
+                const worldItemCenterY = pOppWorld.y + rotOffset.y;
+                item.w = Math.max(8, (st.w || 100) * scaleX);
+                item.h = Math.max(8, (st.h || 100) * scaleY);
+                item.x = worldItemCenterX - item.w / 2;
+                item.y = worldItemCenterY - item.h / 2;
+                if (st.points) {
+                  item.points = st.points.map((p) => {
+                    const lp = rotatePoint(p.x, p.y, c0.x, c0.y, -sb.rotation);
+                    const nlp = { x: nx + (lp.x - sb.x) * scaleX, y: ny + (lp.y - sb.y) * scaleY };
+                    const pdx = nlp.x - pOppLocal.x,
+                      pdy = nlp.y - pOppLocal.y;
+                    const prot = rotatePoint(pdx, pdy, 0, 0, sb.rotation);
+                    return { x: pOppWorld.x + prot.x, y: pOppWorld.y + prot.y };
+                  });
+                }
+                if (item.type === "text" || item.type === "sticky") {
+                  const fontScale = isSide ? scaleX : (scaleX + scaleY) / 2;
+                  item.size = clamp(
+                    Math.round((st.size || (item.type === "sticky" ? 16 : 18)) * fontScale),
+                    8,
+                    400,
+                  );
+                  if (item.type === "text") fitTextElement(item);
+                }
+              } else {
+                if (st.points) {
+                  item.points = st.points.map((p) => ({
+                    x: nx + (p.x - sb.x) * scaleX,
+                    y: ny + (p.y - sb.y) * scaleY,
+                  }));
+                } else {
+                  item.x = nx + (st.x - sb.x) * scaleX;
+                  item.y = ny + (st.y - sb.y) * scaleY;
+                  item.w = Math.max(8, (st.w || 100) * scaleX);
+                  item.h = Math.max(8, (st.h || 100) * scaleY);
+                  if (item.type === "text" || item.type === "sticky") {
+                    const fontScale = isSide ? scaleX : (scaleX + scaleY) / 2;
+                    item.size = clamp(
+                      Math.round((st.size || (item.type === "sticky" ? 16 : 18)) * fontScale),
+                      8,
+                      400,
+                    );
+                    if (item.type === "text") fitTextElement(item);
+                  }
+                }
+              }
+            });
+          }
           render();
           positionToolbar();
           return;
@@ -6522,6 +6860,9 @@ window.__hbiboInit = function (opts) {
           const rad = (dDeg * Math.PI) / 180;
           const cos = Math.cos(rad),
             sin = Math.sin(rad);
+
+          state.transform.groupRotation =
+            ((((state.transform.startGroupRotation || 0) + dDeg) % 360) + 360) % 360;
 
           (state.transform.startMulti || []).forEach((st) => {
             const item = state.elements.find((x) => x.id === st.id);
@@ -6639,9 +6980,7 @@ window.__hbiboInit = function (opts) {
         if (el.rotation) {
           if (isSide) {
             pOppLocal =
-              idx === 0
-                ? { x: sb.x + sb.w, y: sb.y + sb.h / 2 }
-                : { x: sb.x, y: sb.y + sb.h / 2 };
+              idx === 0 ? { x: sb.x + sb.w, y: sb.y + sb.h / 2 } : { x: sb.x, y: sb.y + sb.h / 2 };
           } else {
             if (idx === 0) pOppLocal = { x: sb.x + sb.w, y: sb.y + sb.h };
             else if (idx === 1) pOppLocal = { x: sb.x, y: sb.y + sb.h };
@@ -6650,13 +6989,7 @@ window.__hbiboInit = function (opts) {
           }
           pOppWorld = rotatePoint(pOppLocal.x, pOppLocal.y, c0.x, c0.y, el.rotation);
 
-          const rot = rotatePoint(
-            wPos.x - pOppWorld.x,
-            wPos.y - pOppWorld.y,
-            0,
-            0,
-            -el.rotation,
-          );
+          const rot = rotatePoint(wPos.x - pOppWorld.x, wPos.y - pOppWorld.y, 0, 0, -el.rotation);
           const rawLocalMouse = {
             x: pOppLocal.x + rot.x,
             y: pOppLocal.y + rot.y,
