@@ -55,26 +55,26 @@ export interface WhiteboardCanvasObject {
   w: number;
   h: number;
   rotation: number;
-  color?: string;
-  fill?: boolean;
-  width?: number; // stroke width in px
-  text?: string;
-  size?: number; // font size in px
-  font?: string;
-  bold?: boolean;
-  italic?: boolean;
-  underline?: boolean;
-  bg?: string; // background color for sticky notes or filled shapes
-  points?: Array<{ x: number; y: number }>; // for pen / highlighter
-  src?: string; // image source
-  opacity?: number;
-  isPlaceholder?: boolean;
-  penStyle?: number;
-  highlighterStyle?: number;
-  startX?: number;
-  startY?: number;
-  endX?: number;
-  endY?: number;
+  color?: string | undefined;
+  fill?: boolean | undefined;
+  width?: number | undefined; // stroke width in px
+  text?: string | undefined;
+  size?: number | undefined; // font size in px
+  font?: string | undefined;
+  bold?: boolean | undefined;
+  italic?: boolean | undefined;
+  underline?: boolean | undefined;
+  bg?: string | undefined; // background color for sticky notes or filled shapes
+  points?: Array<{ x: number; y: number }> | undefined; // for pen / highlighter
+  src?: string | undefined; // image source
+  opacity?: number | undefined;
+  isPlaceholder?: boolean | undefined;
+  penStyle?: number | undefined;
+  highlighterStyle?: number | undefined;
+  startX?: number | undefined;
+  startY?: number | undefined;
+  endX?: number | undefined;
+  endY?: number | undefined;
 }
 
 export type DetectedObject = WhiteboardCanvasObject;

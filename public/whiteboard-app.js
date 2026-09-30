@@ -345,7 +345,18 @@ window.__hbiboInit = function (opts) {
   }
   function serializeElements() {
     return state.elements.map((e) => {
-      const { img, _handles, _fadeInterval, fireStarted, opacity, _fresh, ...r } = e;
+      const {
+        img,
+        _handles,
+        _fadeInterval,
+        fireStarted,
+        opacity,
+        _fresh,
+        _vanishStart,
+        cometCut,
+        inkMul,
+        ...r
+      } = e;
       if (r.type === "vanishing") return { ...r, opacity: 1 };
       return { ...r };
     });
@@ -871,7 +882,17 @@ window.__hbiboInit = function (opts) {
       gridSpacing: boardData.gridSpacing || 24,
       camera: boardData.camera || { x: 0, y: 0, zoom: 1 },
       elements: (boardData.elements || []).map((el) => {
-        const { img, _handles, _fadeInterval, fireStarted, _fresh, ...clean } = el;
+        const {
+          img,
+          _handles,
+          _fadeInterval,
+          fireStarted,
+          _fresh,
+          _vanishStart,
+          cometCut,
+          inkMul,
+          ...clean
+        } = el;
         if (clean.type === "vanishing") return { ...clean, opacity: 1 };
         return clean;
       }),
@@ -1526,7 +1547,8 @@ window.__hbiboInit = function (opts) {
         laserCursor.style.left = state.lastMouse.x + "px";
         laserCursor.style.top = state.lastMouse.y + "px";
         const col = state.toolColors.vanishing || "#E52B50";
-        const lw = Math.max(8, Math.min(28, (state.widths.pen || 12) * state.camera.zoom * 1.15));
+        const vw = state.widths.vanishing != null ? state.widths.vanishing : state.width || 4;
+        const lw = Math.max(8, Math.min(28, vw * state.camera.zoom * 1.15));
         laserCursor.style.width = lw + "px";
         laserCursor.style.height = lw + "px";
         laserCursor.style.borderColor = "#fff";
@@ -2703,6 +2725,247 @@ window.__hbiboInit = function (opts) {
     c.stroke();
   }
 
+  // Reusable scratch cache & pools for ultra-fast vanishing stroke rendering
+  const _renderPtsCache = [];
+  const _visiblePts = [];
+  const _activeVanishingStrokes = [];
+  const _fireParticlePool = [];
+  const MAX_FIRE_PARTICLES = 20;
+
+  function getRenderPoints(pts) {
+    if (!pts || pts.length <= 160) return pts;
+    const len = pts.length;
+    const step = Math.ceil(len / 160);
+    _renderPtsCache.length = 0;
+    _renderPtsCache.push(pts[0]);
+    for (let i = step; i < len - 1; i += step) {
+      _renderPtsCache.push(pts[i]);
+    }
+    _renderPtsCache.push(pts[len - 1]);
+    return _renderPtsCache;
+  }
+
+  function traceSmoothSubpath(c, pts, startIdx, endIdx) {
+    if (!pts || endIdx < startIdx) return;
+    const count = endIdx - startIdx + 1;
+    if (count <= 1) {
+      const p = pts[startIdx];
+      c.moveTo(p.x, p.y);
+      return;
+    }
+    if (count === 2) {
+      c.moveTo(pts[startIdx].x, pts[startIdx].y);
+      c.lineTo(pts[endIdx].x, pts[endIdx].y);
+      return;
+    }
+    c.moveTo(pts[startIdx].x, pts[startIdx].y);
+    for (let i = startIdx + 1; i < endIdx; i++) {
+      const mx = (pts[i].x + pts[i + 1].x) * 0.5;
+      const my = (pts[i].y + pts[i + 1].y) * 0.5;
+      c.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+    }
+    c.quadraticCurveTo(pts[endIdx - 1].x, pts[endIdx - 1].y, pts[endIdx].x, pts[endIdx].y);
+  }
+
+  function drawVanishingStroke(el, c) {
+    const rawPts = el.points;
+    if (!rawPts || rawPts.length === 0) return;
+    const pts = getRenderPoints(rawPts);
+    const n = pts.length;
+    const cut = Math.max(0, Math.min(1, el.cometCut || 0));
+    if (cut >= 1) return;
+
+    const baseAlpha = el.opacity != null ? el.opacity : 1;
+    if (baseAlpha <= 0.01) return;
+
+    const baseWidth = Math.max(1, el.width || 4);
+    const mode = el.vanishMode || state.vanishMode || "comet";
+
+    // Single-point click / dot
+    if (n === 1) {
+      const core = el.color || (mode === "ember" ? "#FF6B00" : "#E52B50");
+      c.save();
+      c.fillStyle = core;
+      c.globalAlpha = baseAlpha * (1 - cut);
+      c.shadowColor = core;
+      c.shadowBlur = 10;
+      c.beginPath();
+      c.arc(pts[0].x, pts[0].y, Math.max(1, baseWidth * 0.5), 0, Math.PI * 2);
+      c.fill();
+      c.shadowBlur = 0;
+      c.restore();
+      return;
+    }
+
+    // Compute visible portion starting from receding cut edge
+    const exactStart = cut * (n - 1);
+    const startIdx = Math.min(n - 2, Math.floor(exactStart));
+    const subT = exactStart - startIdx;
+
+    const p0 = pts[startIdx];
+    const p1 = pts[startIdx + 1];
+    const pLeadX = p0.x + (p1.x - p0.x) * subT;
+    const pLeadY = p0.y + (p1.y - p0.y) * subT;
+
+    _visiblePts.length = 0;
+    _visiblePts.push({ x: pLeadX, y: pLeadY });
+    for (let i = startIdx + 1; i < n; i++) {
+      _visiblePts.push(pts[i]);
+    }
+
+    const vCount = _visiblePts.length;
+    if (vCount <= 1) return;
+
+    if (mode === "comet") {
+      const core = el.color || "#E52B50";
+      // 1. Batched Outer Glow Pass (ONE single stroke call with shadowBlur)
+      c.save();
+      c.beginPath();
+      traceSmoothSubpath(c, _visiblePts, 0, vCount - 1);
+      c.strokeStyle = core;
+      c.shadowColor = core;
+      c.shadowBlur = 12;
+      c.lineWidth = baseWidth * 1.35;
+      c.globalAlpha = baseAlpha * 0.42;
+      c.lineCap = "round";
+      c.lineJoin = "round";
+      c.stroke();
+      c.shadowBlur = 0;
+      c.restore();
+
+      // 2. Tapered Core Body (8-10 chunks without shadowBlur)
+      const numChunks = Math.min(10, Math.max(1, vCount - 1));
+      const chunkStep = (vCount - 1) / numChunks;
+      c.save();
+      c.strokeStyle = core;
+      c.lineCap = "round";
+      c.lineJoin = "round";
+      for (let k = 0; k < numChunks; k++) {
+        const segStart = Math.floor(k * chunkStep);
+        const segEnd = Math.min(vCount - 1, Math.ceil((k + 1) * chunkStep));
+        if (segEnd <= segStart) continue;
+
+        const along = (k + 0.6) / numChunks; // 0.06 at tail -> 1.0 at head
+        c.lineWidth = baseWidth * (0.32 + 1.25 * along);
+        c.globalAlpha = baseAlpha * Math.max(0.18, along);
+
+        c.beginPath();
+        traceSmoothSubpath(c, _visiblePts, segStart, segEnd);
+        c.stroke();
+      }
+      c.restore();
+
+      // 3. Glowing Core Nucleus at the head (last point)
+      const headPt = _visiblePts[vCount - 1];
+      c.save();
+      c.fillStyle = "#ffffff";
+      c.globalAlpha = baseAlpha * 0.95;
+      c.shadowColor = core;
+      c.shadowBlur = 8;
+      c.beginPath();
+      c.arc(headPt.x, headPt.y, Math.max(1, baseWidth * 0.5), 0, Math.PI * 2);
+      c.fill();
+      c.shadowBlur = 0;
+      c.restore();
+    } else if (mode === "ember") {
+      const base = el.color || "#FF6B00";
+      const hotZoneCount = Math.max(1, Math.min(vCount - 1, Math.ceil(vCount * 0.15)));
+      const hotEndIdx = hotZoneCount;
+
+      // 1. Warm Amber Body (from hotEndIdx to end of stroke)
+      if (hotEndIdx < vCount) {
+        c.save();
+        c.beginPath();
+        traceSmoothSubpath(c, _visiblePts, Math.max(0, hotEndIdx - 1), vCount - 1);
+        c.strokeStyle = base;
+        c.shadowColor = "rgba(120,53,15,0.6)";
+        c.shadowBlur = 3;
+        c.lineWidth = baseWidth;
+        c.globalAlpha = baseAlpha * 0.92;
+        c.lineCap = "round";
+        c.lineJoin = "round";
+        c.stroke();
+        c.shadowBlur = 0;
+        c.restore();
+      }
+
+      // 2. Burning Hot Edge (from 0 to hotEndIdx)
+      c.save();
+      c.beginPath();
+      traceSmoothSubpath(c, _visiblePts, 0, hotEndIdx);
+      // Fiery orange outer heat
+      c.strokeStyle = "#ea580c";
+      c.shadowColor = "#f97316";
+      c.shadowBlur = 16;
+      c.lineWidth = baseWidth * 1.5;
+      c.globalAlpha = baseAlpha;
+      c.lineCap = "round";
+      c.lineJoin = "round";
+      c.stroke();
+
+      // Incandescent yellow-white core
+      c.strokeStyle = "#fef08a";
+      c.shadowBlur = 0;
+      c.lineWidth = baseWidth * 0.95;
+      c.stroke();
+      c.restore();
+
+      // 3. Burning spark at the receding edge
+      const sparkPt = _visiblePts[0];
+      c.save();
+      c.fillStyle = "#ffffff";
+      c.globalAlpha = baseAlpha;
+      c.shadowColor = "#fde047";
+      c.shadowBlur = 10;
+      c.beginPath();
+      c.arc(sparkPt.x, sparkPt.y, Math.max(1.2, baseWidth * 0.6), 0, Math.PI * 2);
+      c.fill();
+      c.shadowBlur = 0;
+      c.restore();
+    } else {
+      // Ink mode
+      const base = el.color || "#334155";
+      const inkMul = el.inkMul != null ? el.inkMul : 1;
+
+      // 1. Soft paper diffusion halo (batched)
+      c.save();
+      c.beginPath();
+      traceSmoothSubpath(c, _visiblePts, 0, vCount - 1);
+      c.strokeStyle = base;
+      c.shadowColor = base;
+      c.shadowBlur = 6;
+      c.lineWidth = baseWidth * 1.1;
+      c.globalAlpha = baseAlpha * 0.38 * inkMul;
+      c.lineCap = "round";
+      c.lineJoin = "round";
+      c.stroke();
+      c.shadowBlur = 0;
+      c.restore();
+
+      // 2. Organic ink texture body (6-8 chunks without shadowBlur)
+      const numChunks = Math.min(8, Math.max(1, vCount - 1));
+      const chunkStep = (vCount - 1) / numChunks;
+      c.save();
+      c.strokeStyle = base;
+      c.lineCap = "round";
+      c.lineJoin = "round";
+      for (let k = 0; k < numChunks; k++) {
+        const segStart = Math.floor(k * chunkStep);
+        const segEnd = Math.min(vCount - 1, Math.ceil((k + 1) * chunkStep));
+        if (segEnd <= segStart) continue;
+
+        const nse = ((k * 17) % 10) / 10;
+        c.lineWidth = baseWidth * (0.7 + nse * 0.55);
+        c.globalAlpha = baseAlpha * (0.45 + 0.55 * nse) * inkMul;
+
+        c.beginPath();
+        traceSmoothSubpath(c, _visiblePts, segStart, segEnd);
+        c.stroke();
+      }
+      c.restore();
+    }
+  }
+
   function drawElement(el, targetCtx = ctx) {
     const c = targetCtx || ctx;
     c.save();
@@ -2735,100 +2998,7 @@ window.__hbiboInit = function (opts) {
         }
         drawSmoothStrokePath(c, el.points);
       } else if (el.type === "vanishing") {
-        c.globalAlpha = el.opacity != null ? el.opacity : 1;
-        const mode = el.vanishMode || state.vanishMode || "comet";
-        const pts = el.points;
-        const n = pts ? pts.length : 0;
-        const cut = el.cometCut || 0;
-        if (n === 1) {
-          const core = el.color || "#E52B50";
-          c.fillStyle = core;
-          c.shadowColor = core;
-          c.shadowBlur = 12;
-          c.beginPath();
-          c.arc(pts[0].x, pts[0].y, Math.max(1, (el.width || 4) / 2), 0, Math.PI * 2);
-          c.fill();
-          c.shadowBlur = 0;
-        } else if (n > 1) {
-          if (mode === "comet") {
-            const core = el.color || "#E52B50";
-            for (let i = 1; i < n; i++) {
-              const t = i / (n - 1);
-              if (t < cut) continue;
-              const p0 = pts[i - 1],
-                p1 = pts[i];
-              const p_start = i === 1 ? p0 : { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
-              const p_ctrl = p1;
-              const p_end =
-                i === n - 1 ? p1 : { x: (p1.x + pts[i + 1].x) / 2, y: (p1.y + pts[i + 1].y) / 2 };
-              const along = (t - cut) / Math.max(0.001, 1 - cut);
-              c.strokeStyle = core;
-              c.shadowColor = core;
-              c.shadowBlur = 14 * along;
-              c.lineWidth = (el.width || 4) * (0.3 + 1.4 * along);
-              c.globalAlpha = (el.opacity != null ? el.opacity : 1) * Math.max(0.15, along);
-              c.beginPath();
-              c.moveTo(p_start.x, p_start.y);
-              c.quadraticCurveTo(p_ctrl.x, p_ctrl.y, p_end.x, p_end.y);
-              c.stroke();
-            }
-            c.shadowBlur = 0;
-          } else if (mode === "ember") {
-            const base = el.color || "#FF6B00";
-            const alpha = el.opacity != null ? el.opacity : 1;
-            for (let i = 1; i < n; i++) {
-              const t = i / (n - 1);
-              if (t < cut) continue;
-              const heat = Math.max(0, 1 - (t - cut) * 8);
-              const p0 = pts[i - 1],
-                p1 = pts[i];
-              const p_start = i === 1 ? p0 : { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
-              const p_ctrl = p1;
-              const p_end =
-                i === n - 1 ? p1 : { x: (p1.x + pts[i + 1].x) / 2, y: (p1.y + pts[i + 1].y) / 2 };
-              if (heat > 0.05) {
-                c.strokeStyle = `rgb(255,${Math.round(90 + 140 * (1 - heat))},${Math.round(30 + 60 * (1 - heat))})`;
-                c.shadowColor = "#f97316";
-                c.shadowBlur = 6 + 22 * heat;
-                c.lineWidth = (el.width || 4) * (1 + 0.65 * heat);
-                c.globalAlpha = alpha;
-              } else {
-                c.strokeStyle = base;
-                c.shadowColor = "rgba(120,53,15,0.6)";
-                c.shadowBlur = 3;
-                c.lineWidth = el.width || 4;
-                c.globalAlpha = alpha * 0.92;
-              }
-              c.beginPath();
-              c.moveTo(p_start.x, p_start.y);
-              c.quadraticCurveTo(p_ctrl.x, p_ctrl.y, p_end.x, p_end.y);
-              c.stroke();
-            }
-            c.shadowBlur = 0;
-          } else {
-            c.shadowBlur = 6;
-            c.shadowColor = el.color || "#334155";
-            for (let i = 1; i < n; i++) {
-              const p0 = pts[i - 1],
-                p1 = pts[i];
-              const p_start = i === 1 ? p0 : { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
-              const p_ctrl = p1;
-              const p_end =
-                i === n - 1 ? p1 : { x: (p1.x + pts[i + 1].x) / 2, y: (p1.y + pts[i + 1].y) / 2 };
-              const nse = ((i * 17) % 10) / 10;
-              c.globalAlpha =
-                (el.opacity != null ? el.opacity : 1) *
-                (0.45 + 0.55 * nse) *
-                (el.inkMul != null ? el.inkMul : 1);
-              c.lineWidth = (el.width || 4) * (0.7 + nse * 0.6);
-              c.beginPath();
-              c.moveTo(p_start.x, p_start.y);
-              c.quadraticCurveTo(p_ctrl.x, p_ctrl.y, p_end.x, p_end.y);
-              c.stroke();
-            }
-            c.shadowBlur = 0;
-          }
-        }
+        drawVanishingStroke(el, c);
       } else if (el.points && el.points.length >= 1) {
         if (el.points.length === 1) {
           const dotR = Math.max(0.75, (el.width || 4) / 2);
@@ -3150,13 +3320,17 @@ window.__hbiboInit = function (opts) {
     overlayCtx.translate(state.camera.x, state.camera.y);
     overlayCtx.scale(state.camera.zoom, state.camera.zoom);
 
-    const vp = state.elements.length > 25 ? getVisibleWorldViewport(120) : null;
-
-    // 1. Vanishing / laser pointer strokes
-    state.elements.forEach((el) => {
-      if (el.type === "vanishing" && (!vp || isElementInViewport(el, vp)))
-        drawElement(el, overlayCtx);
-    });
+    // 1. Vanishing / laser pointer strokes - iterate only active vanishing strokes
+    const activeLen = _activeVanishingStrokes.length;
+    if (activeLen > 0) {
+      const vp = activeLen > 8 ? getVisibleWorldViewport(120) : null;
+      for (let i = 0; i < activeLen; i++) {
+        const el = _activeVanishingStrokes[i];
+        if (el && (!vp || isElementInViewport(el, vp))) {
+          drawElement(el, overlayCtx);
+        }
+      }
+    }
     if (state.currentElement && state.currentElement.type === "vanishing") {
       drawElement(state.currentElement, overlayCtx);
     }
@@ -3166,19 +3340,18 @@ window.__hbiboInit = function (opts) {
     drawAlignmentGuides(overlayCtx);
     drawSnapAnchorIndicator(overlayCtx);
 
-    // 3. Fire particles
-    state.fireParticles.forEach((p) => {
-      overlayCtx.save();
-      overlayCtx.globalAlpha = p.alpha;
-      overlayCtx.fillStyle = p.color || "#FF6B00";
-      overlayCtx.font = `${p.size}px sans-serif`;
-      if (p.char === "*") {
+    // 3. Fire particles (batched rendering with no font/save/restore overhead)
+    const fpCount = state.fireParticles.length;
+    if (fpCount > 0) {
+      for (let i = 0; i < fpCount; i++) {
+        const p = state.fireParticles[i];
+        overlayCtx.globalAlpha = Math.max(0, Math.min(1, p.alpha));
+        overlayCtx.fillStyle = p.color || "#FF6B00";
         overlayCtx.beginPath();
-        overlayCtx.arc(p.x, p.y, p.size / 3, 0, Math.PI * 2);
+        overlayCtx.arc(p.x, p.y, Math.max(0.6, p.size / 3), 0, Math.PI * 2);
         overlayCtx.fill();
-      } else overlayCtx.fillText(p.char, p.x, p.y);
-      overlayCtx.restore();
-    });
+      }
+    }
 
     overlayCtx.restore();
   }
@@ -3235,18 +3408,14 @@ window.__hbiboInit = function (opts) {
       drawGuideMeasurement(ctx);
       drawAlignmentGuides(ctx);
       drawSnapAnchorIndicator(ctx);
-      state.fireParticles.forEach((p) => {
-        ctx.save();
-        ctx.globalAlpha = p.alpha;
+      for (let i = 0; i < state.fireParticles.length; i++) {
+        const p = state.fireParticles[i];
+        ctx.globalAlpha = Math.max(0, Math.min(1, p.alpha));
         ctx.fillStyle = p.color || "#FF6B00";
-        ctx.font = `${p.size}px sans-serif`;
-        if (p.char === "*") {
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, p.size / 3, 0, Math.PI * 2);
-          ctx.fill();
-        } else ctx.fillText(p.char, p.x, p.y);
-        ctx.restore();
-      });
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, Math.max(0.6, p.size / 3), 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     ctx.restore();
     renderMinimap();
@@ -7602,44 +7771,59 @@ window.__hbiboInit = function (opts) {
       opacity: 1,
     }));
   }
+  function spawnFireParticle(el, prog) {
+    if (state.fireParticles.length >= MAX_FIRE_PARTICLES) return;
+    const pts = el.points;
+    if (!pts || pts.length <= 1) return;
+    const idx = Math.min(pts.length - 1, Math.floor(prog * (pts.length - 1)));
+    const p = pts[idx];
+    if (!p) return;
+
+    let fp = _fireParticlePool.pop();
+    if (!fp) {
+      fp = { x: 0, y: 0, alpha: 1, size: 2, char: "*", color: "#fde047", vx: 0, vy: 0 };
+    }
+    fp.x = p.x + (Math.random() - 0.5) * 6;
+    fp.y = p.y + (Math.random() - 0.5) * 6;
+    fp.alpha = 1;
+    fp.size = 1.5 + Math.random() * 3;
+    fp.char = "*";
+    fp.color = ["#fde047", "#fb923c", "#ef4444"][Math.floor(Math.random() * 3)];
+    fp.vx = (Math.random() - 0.5) * 0.8;
+    fp.vy = -Math.random() * 1.5 - 0.4;
+    state.fireParticles.push(fp);
+  }
+
   let _laserLoopActive = false;
   function tickLaserVanish() {
     const now = performance.now();
     let anyActive = false;
+    let didClearSelection = false;
 
-    for (let i = state.elements.length - 1; i >= 0; i--) {
-      const el = state.elements[i];
-      if (el.type !== "vanishing") continue;
+    for (let i = _activeVanishingStrokes.length - 1; i >= 0; i--) {
+      const el = _activeVanishingStrokes[i];
+      if (!el || el.type !== "vanishing") {
+        _activeVanishingStrokes.splice(i, 1);
+        continue;
+      }
       anyActive = true;
       if (!el._vanishStart) el._vanishStart = now;
 
       const mode = el.vanishMode || state.vanishMode || "comet";
-      const hold = mode === "ember" ? 400 : mode === "ink" ? 800 : 60;
-      const duration = mode === "comet" ? 650 : mode === "ember" ? 800 : 1000;
+      // Target timings: comet: 400ms (350-450ms), ember: 580ms (500-650ms), ink: 700ms (600-800ms)
+      // Disappearance begins immediately after release (hold = 0)
+      const duration = mode === "comet" ? 400 : mode === "ember" ? 580 : 700;
       const elapsed = now - el._vanishStart;
 
-      if (elapsed < hold) continue;
-
-      const prog = Math.min(1, (elapsed - hold) / duration);
+      const prog = Math.min(1, elapsed / duration);
       if (mode === "comet") {
         el.cometCut = prog;
         el.opacity = 1 - prog * 0.15;
       } else if (mode === "ember") {
         el.cometCut = prog;
         el.opacity = 1 - prog * 0.25;
-        if (el.points && el.points.length > 1 && state.fireParticles.length < 24) {
-          const idx = Math.min(el.points.length - 1, Math.floor(prog * (el.points.length - 1)));
-          const p = el.points[idx];
-          state.fireParticles.push({
-            x: p.x + (Math.random() - 0.5) * 6,
-            y: p.y + (Math.random() - 0.5) * 6,
-            alpha: 1,
-            size: 1.5 + Math.random() * 3,
-            char: "*",
-            color: ["#fde047", "#fb923c", "#ef4444"][Math.floor(Math.random() * 3)],
-            vx: (Math.random() - 0.5) * 0.8,
-            vy: -Math.random() * 1.5 - 0.4,
-          });
+        if (el.points && el.points.length > 1 && state.fireParticles.length < MAX_FIRE_PARTICLES) {
+          spawnFireParticle(el, prog);
         }
       } else {
         el.inkMul = 1 - prog;
@@ -7647,28 +7831,40 @@ window.__hbiboInit = function (opts) {
       }
 
       if (prog >= 1) {
-        state.elements.splice(i, 1);
+        _activeVanishingStrokes.splice(i, 1);
+        const idxInState = state.elements.indexOf(el);
+        if (idxInState !== -1) {
+          state.elements.splice(idxInState, 1);
+        }
         if (state.selectedId === el.id) {
           state.selectedId = null;
           hideToolbar();
+          didClearSelection = true;
         }
       }
     }
 
     if (state.fireParticles.length > 0) {
       anyActive = true;
-      for (let j = state.fireParticles.length - 1; j >= 0; j--) {
-        const fp = state.fireParticles[j];
+      let writeIdx = 0;
+      const particles = state.fireParticles;
+      for (let j = 0; j < particles.length; j++) {
+        const fp = particles[j];
         fp.x += fp.vx;
         fp.y += fp.vy;
-        fp.alpha -= 0.035;
+        fp.alpha -= 0.045;
         fp.vy -= 0.01;
         fp.vx *= 0.98;
-        fp.size *= 0.98;
-        if (fp.alpha <= 0 || fp.size <= 0.3) {
-          state.fireParticles.splice(j, 1);
+        fp.size *= 0.97;
+        if (fp.alpha > 0.02 && fp.size > 0.3) {
+          particles[writeIdx++] = fp;
+        } else {
+          if (_fireParticlePool.length < 32) {
+            _fireParticlePool.push(fp);
+          }
         }
       }
+      particles.length = writeIdx;
     }
 
     if (overlayCtx) {
@@ -7681,14 +7877,24 @@ window.__hbiboInit = function (opts) {
       requestAnimationFrame(tickLaserVanish);
     } else {
       _laserLoopActive = false;
-      state.fireParticles = [];
-      if (overlayCtx) renderOverlay();
-      render();
+      for (let k = 0; k < state.fireParticles.length; k++) {
+        if (_fireParticlePool.length < 32) _fireParticlePool.push(state.fireParticles[k]);
+      }
+      state.fireParticles.length = 0;
+      if (overlayCtx) {
+        renderOverlay();
+        if (didClearSelection) render();
+      } else {
+        render();
+      }
     }
   }
 
   function startLaserVanish(el) {
     el._vanishStart = performance.now();
+    if (!_activeVanishingStrokes.includes(el)) {
+      _activeVanishingStrokes.push(el);
+    }
     if (!_laserLoopActive) {
       _laserLoopActive = true;
       requestAnimationFrame(tickLaserVanish);
@@ -7727,8 +7933,12 @@ window.__hbiboInit = function (opts) {
         pushUndo();
         state.eraseDidPush = true;
       }
-      state.eraseTouched = true;
       state.elements = [...keep, ...newElements];
+      for (let i = _activeVanishingStrokes.length - 1; i >= 0; i--) {
+        if (!state.elements.includes(_activeVanishingStrokes[i])) {
+          _activeVanishingStrokes.splice(i, 1);
+        }
+      }
       if (state.selectedId && !state.elements.find((e) => e.id === state.selectedId)) {
         state.selectedId = null;
         hideToolbar();
@@ -7913,6 +8123,12 @@ window.__hbiboInit = function (opts) {
     });
     pushUndo();
     state.elements = [];
+    _activeVanishingStrokes.length = 0;
+    for (let k = 0; k < state.fireParticles.length; k++) {
+      if (_fireParticlePool.length < 32) _fireParticlePool.push(state.fireParticles[k]);
+    }
+    state.fireParticles.length = 0;
+    if (overlayCtx) renderOverlay();
     state.selectedId = null;
     hideAll();
     saveBoards(true);
@@ -8282,7 +8498,17 @@ window.__hbiboInit = function (opts) {
           const payload = {
             name: rawTitle,
             elements: (state.elements || []).map((el) => {
-              const { img, _handles, _fadeInterval, fireStarted, _fresh, ...clean } = el;
+              const {
+                img,
+                _handles,
+                _fadeInterval,
+                fireStarted,
+                _fresh,
+                _vanishStart,
+                cometCut,
+                inkMul,
+                ...clean
+              } = el;
               if (clean.type === "vanishing") return { ...clean, opacity: 1 };
               return clean;
             }),

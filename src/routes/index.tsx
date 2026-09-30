@@ -562,6 +562,7 @@ function HomePage() {
   const [batchExpanded, setBatchExpanded] = useState(false);
   const renameRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const unsubProgress = globalBatchManager.subscribe((state) => {
@@ -1516,12 +1517,28 @@ function HomePage() {
             </div>
           </div>
           <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t("searchPlaceholder")}
-              className="h-8.5 w-full max-w-xs text-xs sm:w-48 md:w-56"
-            />
+            <div className="relative w-full max-w-xs sm:w-48 md:w-56">
+              <Input
+                ref={searchInputRef}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t("searchPlaceholder")}
+                className="h-8.5 w-full text-xs pr-7"
+              />
+              {search.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    searchInputRef.current?.focus();
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors focus:outline-none focus:ring-1 focus:ring-ring"
+                  aria-label="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
             <Select value={phaseFilter} onValueChange={setPhaseFilter}>
               <SelectTrigger className="h-8.5 w-36 sm:w-40 text-xs">
                 <SelectValue placeholder={t("selectPhase")} />
